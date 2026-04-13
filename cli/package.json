@@ -1,0 +1,22 @@
+{
+  "name": "actp-cli",
+  "version": "0.1.0",
+  "description": "CLI tool for ACTP — AI Context Transfer Protocol",
+  "main": "dist/index.js",
+  "bin": {
+    "actp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "commander": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.39",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
+  }
+}

@@ -1,7 +1,0 @@
-cli/
-├── package.json
-├── tsconfig.json
-└── src/
-    ├── index.ts
-    ├── packet.ts
-    └── types.ts
