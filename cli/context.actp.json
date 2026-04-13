@@ -2,26 +2,34 @@
   "@context": "https://actp.dev/schema/v0.1",
   "@type": "ACTPPacket",
   "actp_version": "0.1",
-  "created_at": "2026-04-13T22:41:51.911Z",
+  "created_at": "2026-04-13T23:53:14.683Z",
   "source_model": "claude",
   "vocabulary_hash": "actp-legend-v0.1",
   "symbol_legend": {
-    "🔴": "priority=P0, mutability=LOCKED, certainty=HIGH",
-    "🟡": "priority=P1, mutability=FLEXIBLE, certainty=MEDIUM",
-    "🔵": "priority=P2, mutability=FLEXIBLE, certainty=LOW",
-    "🟢": "status=COMPLETED",
-    "🌫️": "certainty=LOW, hallucination_risk=true",
-    "🔗": "external_dependency=true"
+    "P0": "priority=P0, mutability=LOCKED, certainty=HIGH",
+    "P1": "priority=P1, mutability=FLEXIBLE, certainty=MEDIUM",
+    "P2": "priority=P2, mutability=FLEXIBLE, certainty=LOW",
+    "COMPLETED": "status=COMPLETED",
+    "LOW_CERTAINTY": "certainty=LOW, hallucination_risk=true",
+    "EXTERNAL": "external_dependency=true"
   },
   "project": {
-    "name": "ACTP",
-    "goal": "Portable AI context transfer",
+    "name": "actp-spec",
+    "goal": "Portable AI context transfer protocol",
     "constraints": [],
     "soft_preferences": []
   },
-  "decisions": [],
+  "decisions": [
+    {
+      "id": "D1",
+      "content": "Use fetch() only, no SDKs",
+      "priority": "P0",
+      "symbol": "P0",
+      "source": "actp capture"
+    }
+  ],
   "tasks": [],
   "open_questions": [],
   "next_steps": [],
-  "integrity_hash": "427f24835e186614b415b2652f640b81caf9d4668c5a2ce865c6c50d07ee809a"
+  "integrity_hash": "cc7c6f9894a3fb9322943951ae9e8731c92a3abc0b9efe8f16749d8586a6e7f7"
 }

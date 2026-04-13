@@ -1,19 +1,13 @@
-export type Priority = "P0" | "P1" | "P2";
-export type Certainty = "HIGH" | "MEDIUM" | "LOW";
-export type Mutability = "LOCKED" | "FLEXIBLE";
-export type TaskStatus = "done" | "pending" | "blocked";
 export type SourceModel = "claude" | "chatgpt" | "gemini" | "other";
+export type TaskStatus = "todo" | "in_progress" | "done" | "blocked";
+export type SymbolPriority = "P0" | "P1" | "P2";
 
 export interface ACTPDecision {
   id: string;
-  symbol?: string;
-  priority: Priority;
-  certainty: Certainty;
-  mutability: Mutability;
   content: string;
-  rationale?: string;
-  source_model?: SourceModel;
-  hallucination_risk?: boolean;
+  priority: "P0" | "P1" | "P2";
+  symbol?: string;
+  source?: string;
   external_dependency?: boolean;
 }
 
@@ -25,12 +19,7 @@ export interface ACTPTask {
 }
 
 export interface ACTPArtifacts {
-  code_snippets?: Array<{
-    id: string;
-    lang: string;
-    content: string;
-    summary?: string;
-  }>;
+  code_snippets?: Array<{ id: string; lang: string; content: string; summary?: string }>;
   references?: string[];
 }
 
@@ -39,7 +28,7 @@ export interface ACTPPacket {
   "@type": "ACTPPacket";
   actp_version: "0.1";
   created_at: string;
-  source_model?: SourceModel;
+  source_model: SourceModel;
   vocabulary_hash: string;
   symbol_legend: Record<string, string>;
   project: {
