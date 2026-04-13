@@ -1,0 +1,187 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://actp.dev/schema/v0.1/actp.schema.json",
+  "title": "ACTP — AI Context Transfer Protocol",
+  "description": "Schema for portable AI context packets. Model-agnostic, user-owned, semantic-first.",
+  "version": "0.1",
+  "type": "object",
+  "required": [
+    "@context",
+    "@type",
+    "actp_version",
+    "created_at",
+    "vocabulary_hash",
+    "symbol_legend",
+    "project",
+    "decisions"
+  ],
+  "properties": {
+    "@context": {
+      "type": "string",
+      "const": "https://actp.dev/schema/v0.1",
+      "description": "JSON-LD context namespace. Must match this value for v0.1."
+    },
+    "@type": {
+      "type": "string",
+      "const": "ACTPPacket",
+      "description": "Packet type identifier."
+    },
+    "actp_version": {
+      "type": "string",
+      "const": "0.1",
+      "description": "Protocol version."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO8601 timestamp of packet creation."
+    },
+    "source_model": {
+      "type": "string",
+      "enum": ["claude", "chatgpt", "gemini", "other"],
+      "description": "AI model that generated this packet."
+    },
+    "vocabulary_hash": {
+      "type": "string",
+      "description": "Version identifier for the symbol_legend. If hash changes, receiving model must re-sync legend before processing payload."
+    },
+    "symbol_legend": {
+      "type": "object",
+      "description": "Defines the symbolic encoding vocabulary for this packet. Always embed — never assume the receiver knows the legend.",
+      "properties": {
+        "🔴": { "type": "string", "const": "priority=P0, mutability=LOCKED, certainty=HIGH" },
+        "🟡": { "type": "string", "const": "priority=P1, mutability=FLEXIBLE, certainty=MEDIUM" },
+        "🔵": { "type": "string", "const": "priority=P2, mutability=FLEXIBLE, certainty=LOW" },
+        "🟢": { "type": "string", "const": "status=COMPLETED" },
+        "🌫️": { "type": "string", "const": "certainty=LOW, hallucination_risk=true" },
+        "🔗": { "type": "string", "const": "external_dependency=true" }
+      }
+    },
+    "project": {
+      "type": "object",
+      "required": ["name", "goal"],
+      "description": "Top-level project descriptor — the apex of the context hierarchy.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Project name."
+        },
+        "goal": {
+          "type": "string",
+          "description": "One sentence. What is this project trying to achieve?"
+        },
+        "constraints": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "🔴 Immutable constraints. These must never be overridden by any model."
+        },
+        "soft_preferences": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "🟡 Flexible preferences. Can be adjusted if justified."
+        }
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "description": "Decisions made during this project. Core of the context packet.",
+      "items": {
+        "type": "object",
+        "required": ["id", "priority", "certainty", "mutability", "content"],
+        "properties": {
+          "id": { "type": "string", "description": "Unique decision ID (e.g. D1, D2)." },
+          "symbol": { "type": "string", "description": "Optional human-readable symbol from legend." },
+          "priority": { "type": "string", "enum": ["P0", "P1", "P2"], "description": "P0=critical, P1=high, P2=low." },
+          "certainty": { "type": "string", "enum": ["HIGH", "MEDIUM", "LOW"] },
+          "mutability": { "type": "string", "enum": ["LOCKED", "FLEXIBLE"], "description": "LOCKED decisions must not be changed without human approval." },
+          "content": { "type": "string", "description": "The decision itself." },
+          "rationale": { "type": "string", "description": "Why this decision was made." },
+          "source_model": { "type": "string", "description": "Which model made this decision." },
+          "hallucination_risk": { "type": "boolean", "default": false, "description": "🌫️ Flag if this content has low certainty." },
+          "external_dependency": { "type": "boolean", "default": false, "description": "🔗 Flag if this relies on external file or API not in packet." }
+        }
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "description": "Current task list and status.",
+      "items": {
+        "type": "object",
+        "required": ["id", "status", "description"],
+        "properties": {
+          "id": { "type": "string" },
+          "status": { "type": "string", "enum": ["done", "pending", "blocked"] },
+          "description": { "type": "string" },
+          "symbol": { "type": "string" }
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "description": "Code, files, and references relevant to the project state.",
+      "properties": {
+        "code_snippets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "lang", "content"],
+            "properties": {
+              "id": { "type": "string" },
+              "lang": { "type": "string" },
+              "content": { "type": "string" },
+              "summary": { "type": "string" }
+            }
+          }
+        },
+        "references": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "URLs or filenames. Mark with 🔗 if external dependency."
+        }
+      }
+    },
+    "entity_map": {
+      "type": "object",
+      "description": "Canonical name registry. Prevents naming drift across models and sessions.",
+      "additionalProperties": { "type": "string" }
+    },
+    "priority_matrix": {
+      "type": "array",
+      "description": "Attention steering weights. Tells the receiving model which segments to prioritize.",
+      "items": {
+        "type": "object",
+        "required": ["segment", "weight"],
+        "properties": {
+          "segment": { "type": "string" },
+          "weight": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Unresolved questions that the receiving model should be aware of."
+    },
+    "next_steps": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Ordered list of actions to take next."
+    },
+    "dead_letter": {
+      "type": "array",
+      "description": "Quarantined context that could not be rehydrated. Do not discard — preserve for debugging.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "reason": { "type": "string" },
+          "original": { "type": "string" }
+        }
+      }
+    },
+    "integrity_hash": {
+      "type": "string",
+      "description": "SHA-256 hash of all content fields. Used to verify packet integrity on import."
+    }
+  }
+}
