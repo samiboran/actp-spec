@@ -32,7 +32,7 @@ ACTP defines a portable `.actp` JSON format that captures the full semantic stat
   "open_questions": ["...", "..."],
   "next_steps": ["...", "..."]
 }
-\```
+\``
 
 ## Status
 
