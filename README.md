@@ -222,11 +222,27 @@ ACTP-N nodes can be implemented as MCP extensions, leveraging the existing MCP e
 | ✅ | Symbolic encoding layer |
 | ✅ | Node architecture spec (ACTP-N) |
 | 🔄 | CLI: chat export → ACTP packet |
-| 🔄 | Benchmark: symbolic vs plain text constraint-following |
+| ✅ | BENCH-001: Format vs constraint-following (3 models × 3 formats) |
+| ✅ | BENCH-002: Anti-pattern lists fix model violations (3 models × 4 formats) |
 | ⬜ | Compressor Agent (SaaS) |
 | ⬜ | Maestro — multi-model orchestrator |
 | ⬜ | actp.dev spec site |
 
+## Benchmarks
+
+ACTP constraint-following has been tested across Claude, ChatGPT, and Gemini.
+
+### BENCH-001 — Format vs Constraint Following
+**Constraint:** Model-agnostic, no provider SDK  
+**Result:** Claude ✅ ChatGPT ✅ Gemini ❌ (all 3 formats)  
+**Finding:** Gemini hardcoded OpenAI response shape regardless of format. Format alone cannot guarantee constraint following.
+
+### BENCH-002 — Explicit Anti-Pattern Lists
+**Constraint:** Same + explicit forbidden patterns with provider attribution  
+**Result:** Claude ✅ ChatGPT ✅ Gemini ✅ (all 4 formats)  
+**Finding:** Explicit anti-patterns fixed Gemini: 0/4 → 4/4. Constraint quality determines compliance, not format. Gemini internalized ACTP as native protocol — generating `actp_request`, `actp_payload`, `X-ACTP-Version` headers spontaneously.
+
+> Full benchmark data: [`benchmarks/BENCH-002.md`](benchmarks/BENCH-002.md)
 ---
 
 ## Business Model
