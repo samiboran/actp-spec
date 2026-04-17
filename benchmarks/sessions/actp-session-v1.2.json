@@ -1,0 +1,136 @@
+{
+  "packet_meta": {
+    "format": "ACTP-session-summary-v1.2",
+    "created": "2026-04-16T02:45:00Z",
+    "session_id": "maestro-panel-fix-session",
+    "origin_model": "Claude Opus 4.5",
+    "previous_version": "actp-unified-v1.1.json"
+  },
+
+  "projects": {
+    "maestro": {
+      "name": "Maestro",
+      "github": "https://github.com/samiboran/maestro",
+      "local_path": "C:\\Users\\pc\\Desktop\\maestro",
+      "status": "v0.2+ panel fixes in progress"
+    },
+    "actp_spec": {
+      "name": "ACTP Spec",
+      "github": "https://github.com/samiboran/actp-spec",
+      "local_path": "C:\\Users\\pc\\Desktop\\actp-spec",
+      "status": "v0.4 stable"
+    }
+  },
+
+  "session_accomplishments": [
+    "✅ react-rnd kütüphanesi kuruldu (npm install react-rnd)",
+    "✅ DraggablePanel.jsx react-rnd ile refactor edildi",
+    "✅ ApiKeyModal'a X butonu ve 'Şimdilik Geç' eklendi",
+    "✅ snap-guides çizgileri tespit edildi (kaldırılacak)",
+    "✅ Panel pozisyonlama debug edildi (console.log eklendi)",
+    "✅ SAFE_MARGIN (10px) eklendi overflow için",
+    "✅ bounds='window' kaldırıldı (react-rnd bug fix)"
+  ],
+
+  "ongoing_issues": {
+    "panel_right_missing": {
+      "problem": "GPT-OSS 120B (right snap) paneli görünmüyor",
+      "root_cause": "react-rnd bounds='window' + x=100% hesaplaması overflow yapıyor",
+      "debug_output": "Panel right: x=1610, y=231 (viewport 400px olunca ekran dışı)",
+      "attempted_fixes": [
+        "Clamp fonksiyonu eklendi",
+        "SAFE_MARGIN (10px) eklendi",
+        "bounds='window' kaldırıldı"
+      ],
+      "status": "Bazen görünüyor, bazen kayıp — instabil"
+    },
+    "snap_guides_lines": {
+      "problem": "Ekranda dikey çizgiler panel hareketini engelliyor",
+      "location": "App.jsx satır 101-106, .snap-guides div",
+      "fix": "Bu bloğu silmek gerekiyor"
+    }
+  },
+
+  "current_file_state": {
+    "DraggablePanel.jsx": {
+      "library": "react-rnd",
+      "SNAP_POINTS": [
+        { "id": "left", "x": 0, "y": 35 },
+        { "id": "right", "x": 100, "y": 35 },
+        { "id": "bottom-center", "x": 50, "y": 70 }
+      ],
+      "SAFE_MARGIN": 10,
+      "bounds": "removed (was 'window')",
+      "debug_logging": true
+    },
+    "App.jsx": {
+      "MODELS": [
+        { "id": "claude", "name": "Llama 3.3 70B", "initialSnap": "left" },
+        { "id": "chatgpt", "name": "GPT-OSS 120B", "initialSnap": "right" },
+        { "id": "gemini", "name": "Groq Compound", "initialSnap": "bottom-center" }
+      ],
+      "snap_guides": "Needs to be removed (lines 101-106)"
+    },
+    "ApiKeyModal.jsx": {
+      "features": ["X close button", "Şimdilik Geç button", "Kaydet ve Başla button"]
+    },
+    "App.css": {
+      "modal": "position: relative added",
+      "duplicate_modal_rule": "Fixed (was defined twice)"
+    }
+  },
+
+  "groq_api": {
+    "key": "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",
+    "models_used": [
+      { "panel": "claude", "model": "llama-3.3-70b-versatile" },
+      { "panel": "chatgpt", "model": "openai/gpt-oss-120b" },
+      { "panel": "gemini", "model": "groq/compound" }
+    ],
+    "worker_url": "https://maestro-proxy.s-borankocoglu.workers.dev"
+  },
+
+  "next_session_tasks": {
+    "priority_1_fix": [
+      "App.jsx'ten snap-guides bloğunu sil (satır 101-106)",
+      "Panel right (GPT-OSS) görünürlük sorununu kalıcı çöz",
+      "react-rnd bounds stratejisini yeniden değerlendir"
+    ],
+    "priority_2_ui": [
+      "Prompt kutusu width auto-resize",
+      "Sol sidebar (Claude benzeri)",
+      "Synthesis box sadece 3 response sonrası göster (tamamlandı)"
+    ],
+    "priority_3_deploy": [
+      "Cloudflare Pages deploy",
+      "ACTP Export butonu UI'a ekle"
+    ]
+  },
+
+  "multi_model_consultation": {
+    "method": "ACTP JSON format ile 3 modele soru sorma",
+    "models_consulted": ["Llama 3.3 70B", "GPT-OSS 120B", "Groq Compound"],
+    "insights": [
+      "react-rnd bounds='window' sınırlara çok hassas",
+      "x=100% hesaplamasında scrollbar/border/padding hesaba katılmalı",
+      "SAFE_MARGIN (5-10px) her zaman kullanılmalı"
+    ]
+  },
+
+  "key_learnings": {
+    "react_rnd": {
+      "issue": "bounds='window' + percentage positioning = overflow risk",
+      "solution": "SAFE_MARGIN + clamp + possibly bounds='parent' with container"
+    },
+    "debugging": {
+      "method": "console.log ile x/y değerlerini yazdır",
+      "finding": "DevTools açıkken viewport küçülüyor, paneller ekran dışı kalıyor"
+    }
+  },
+
+  "session_workflow": {
+    "actp_packets_location": "actp-spec/benchmarks/sessions/",
+    "naming_convention": "actp-unified-vX.X.json",
+    "archive_folder": "actp-spec/benchmarks/sessions/archive/"
+  }
+}
