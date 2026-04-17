@@ -81,7 +81,7 @@
   },
 
   "groq_api": {
-    "key": "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",
+    
     "models_used": [
       { "panel": "claude", "model": "llama-3.3-70b-versatile" },
       { "panel": "chatgpt", "model": "openai/gpt-oss-120b" },
