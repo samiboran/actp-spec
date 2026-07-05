@@ -1,0 +1,93 @@
+diff --git a/actp.schema.json b/actp.schema.json
+index 63ec352..fd1529b 100644
+--- a/actp.schema.json
++++ b/actp.schema.json
+@@ -137,6 +137,35 @@
+           "type": "array",
+           "items": { "type": "string" },
+           "description": "URLs or filenames. Mark with 🔗 if external dependency."
++        },
++        "code_graph_ref": {
++          "type": "object",
++          "description": "Optional reference to a precomputed structural code graph (e.g. Graphify output). Complements ACTP's declarative decision memory with structural/dependency memory. Only a reference is stored — never the graph itself — to keep packets lightweight.",
++          "required": ["tool", "graph_path"],
++          "properties": {
++            "tool": {
++              "type": "string",
++              "description": "Name of the graph-generation tool used.",
++              "examples": ["graphify"]
++            },
++            "graph_path": {
++              "type": "string",
++              "description": "Relative path to the graph file (e.g. graph.json) within the project."
++            },
++            "graph_hash": {
++              "type": "string",
++              "description": "SHA-256 hash of the graph file. Used by the receiving model to detect staleness before trusting the reference."
++            },
++            "generated_at": {
++              "type": "string",
++              "format": "date-time",
++              "description": "Timestamp when the graph was last built."
++            },
++            "node_count": {
++              "type": "integer",
++              "description": "Number of nodes in the graph. Below ~500 files, consumers may reasonably skip resolving this reference since the graph adds more overhead than value at small scale."
++            }
++          }
+         }
+       }
+     },
+diff --git a/cli/src/index.ts b/cli/src/index.ts
+index 78a7b7d..fdd4fca 100644
+--- a/cli/src/index.ts
++++ b/cli/src/index.ts
+@@ -64,6 +64,25 @@ program
+         console.log(`\n?? Next Steps:`);
+         raw.next_steps.forEach((s, i) => console.log(`  ${i + 1}. ${s}`));
+       }
++      const graphRef = raw.artifacts && raw.artifacts.code_graph_ref;
++      if (graphRef) {
++        console.log(`\n?? Code Graph:`);
++        console.log(`  tool: ${graphRef.tool} | path: ${graphRef.graph_path}`);
++        if (graphRef.node_count !== undefined) {
++          const note = graphRef.node_count < 500 ? " (below 500-file threshold - resolving may not be worth it)" : "";
++          console.log(`  nodes: ${graphRef.node_count}${note}`);
++        }
++        if (graphRef.graph_hash) {
++          const localPath = path.resolve(path.dirname(filePath), graphRef.graph_path);
++          if (fs.existsSync(localPath)) {
++            const crypto = require("crypto");
++            const currentHash = crypto.createHash("sha256").update(fs.readFileSync(localPath)).digest("hex");
++            console.log(currentHash === graphRef.graph_hash ? `  status: up to date` : `  status: STALE - graph changed since packet was created`);
++          } else {
++            console.log(`  status: graph file not found at ${localPath}`);
++          }
++        }
++      }
+       console.log(`${"�".repeat(50)}\n`);
+     } catch { console.error(`? Failed to parse packet`); process.exit(1); }
+   });
+diff --git a/cli/src/types.ts b/cli/src/types.ts
+index e68303d..8d9a6ca 100644
+--- a/cli/src/types.ts
++++ b/cli/src/types.ts
+@@ -18,9 +18,18 @@ export interface ACTPTask {
+   symbol?: string;
+ }
+ 
++export interface ACTPCodeGraphRef {
++  tool: string;
++  graph_path: string;
++  graph_hash?: string;
++  generated_at?: string;
++  node_count?: number;
++}
++
+ export interface ACTPArtifacts {
+   code_snippets?: Array<{ id: string; lang: string; content: string; summary?: string }>;
+   references?: string[];
++  code_graph_ref?: ACTPCodeGraphRef;
+ }
+ 
+ export interface ACTPPacket {

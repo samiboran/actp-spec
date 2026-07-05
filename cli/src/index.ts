@@ -52,7 +52,7 @@ program
     if (!fs.existsSync(filePath)) { console.error(`? File not found: ${filePath}`); process.exit(1); }
     try {
       const raw = JSON.parse(fs.readFileSync(filePath, "utf-8")) as ACTPPacket;
-      console.log(`${"¦".repeat(50)}`);
+      console.log(`${"ï¿½".repeat(50)}`);
       console.log(`Project : ${raw.project.name}`);
       console.log(`Goal    : ${raw.project.goal}`);
       console.log(`Model   : ${raw.source_model ?? "unknown"}`);
@@ -64,7 +64,26 @@ program
         console.log(`\n?? Next Steps:`);
         raw.next_steps.forEach((s, i) => console.log(`  ${i + 1}. ${s}`));
       }
-      console.log(`${"¦".repeat(50)}\n`);
+      const graphRef = raw.artifacts && raw.artifacts.code_graph_ref;
+      if (graphRef) {
+        console.log(`\n?? Code Graph:`);
+        console.log(`  tool: ${graphRef.tool} | path: ${graphRef.graph_path}`);
+        if (graphRef.node_count !== undefined) {
+          const note = graphRef.node_count < 500 ? " (below 500-file threshold - resolving may not be worth it)" : "";
+          console.log(`  nodes: ${graphRef.node_count}${note}`);
+        }
+        if (graphRef.graph_hash) {
+          const localPath = path.resolve(path.dirname(filePath), graphRef.graph_path);
+          if (fs.existsSync(localPath)) {
+            const crypto = require("crypto");
+            const currentHash = crypto.createHash("sha256").update(fs.readFileSync(localPath)).digest("hex");
+            console.log(currentHash === graphRef.graph_hash ? `  status: up to date` : `  status: STALE - graph changed since packet was created`);
+          } else {
+            console.log(`  status: graph file not found at ${localPath}`);
+          }
+        }
+      }
+      console.log(`${"ï¿½".repeat(50)}\n`);
     } catch { console.error(`? Failed to parse packet`); process.exit(1); }
   });
 

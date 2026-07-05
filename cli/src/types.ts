@@ -18,9 +18,18 @@ export interface ACTPTask {
   symbol?: string;
 }
 
+export interface ACTPCodeGraphRef {
+  tool: string;
+  graph_path: string;
+  graph_hash?: string;
+  generated_at?: string;
+  node_count?: number;
+}
+
 export interface ACTPArtifacts {
   code_snippets?: Array<{ id: string; lang: string; content: string; summary?: string }>;
   references?: string[];
+  code_graph_ref?: ACTPCodeGraphRef;
 }
 
 export interface ACTPPacket {

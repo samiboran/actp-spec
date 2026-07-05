@@ -137,6 +137,35 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "URLs or filenames. Mark with 🔗 if external dependency."
+        },
+        "code_graph_ref": {
+          "type": "object",
+          "description": "Optional reference to a precomputed structural code graph (e.g. Graphify output). Complements ACTP's declarative decision memory with structural/dependency memory. Only a reference is stored — never the graph itself — to keep packets lightweight.",
+          "required": ["tool", "graph_path"],
+          "properties": {
+            "tool": {
+              "type": "string",
+              "description": "Name of the graph-generation tool used.",
+              "examples": ["graphify"]
+            },
+            "graph_path": {
+              "type": "string",
+              "description": "Relative path to the graph file (e.g. graph.json) within the project."
+            },
+            "graph_hash": {
+              "type": "string",
+              "description": "SHA-256 hash of the graph file. Used by the receiving model to detect staleness before trusting the reference."
+            },
+            "generated_at": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Timestamp when the graph was last built."
+            },
+            "node_count": {
+              "type": "integer",
+              "description": "Number of nodes in the graph. Below ~500 files, consumers may reasonably skip resolving this reference since the graph adds more overhead than value at small scale."
+            }
+          }
         }
       }
     },

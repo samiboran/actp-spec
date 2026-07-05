@@ -265,6 +265,18 @@ The protocol is open. The tooling is where value is captured.
 
 This spec was developed collaboratively across Claude, ChatGPT, and Gemini sessions — itself a live proof of concept for ACTP.
 
+## Ideas / Roadmap
+
+- **Session Tracking**: Add a `sessions` array to the spec that automatically logs each AI work session — start/end timestamps, summary of changes, decisions made, files modified. This enables full project history across AI sessions.
+
+- **AI-to-AI Handoff**: Use session data to seamlessly transfer context between different AI models. Start a project with Claude, continue with ChatGPT, review with Gemini — without losing any context.
+
+- **"Session End" Button**: Frontend implementations (like Maestro) can add a "Session Bitti" button that auto-generates an `.actp` JSON export of the current session, ready to import into any AI.
+
+- **Multi-Model Synthesis Logging**: When multiple models answer the same question (orchestration tools), log each model's response and the synthesis result as part of the session record.
+
+- **Import/Resume**: Load a previous `.actp` file to resume exactly where you left off — the AI reads the file and has full context of all past decisions, code state, and open questions.
+
 ## Contributing
 
 Open an issue or PR. This is meant to become a community standard.
