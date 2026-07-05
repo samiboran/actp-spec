@@ -84,7 +84,14 @@ Think of it as **Git for AI memory** — versioned, portable, owned by you.
     "code_snippets": [
       { "id": "C1", "lang": "string", "content": "string" }
     ],
-    "references": ["url or filename"]
+    "references": ["url or filename"],
+    "code_graph_ref": {
+      "tool": "graphify",
+      "graph_path": "graph.json",
+      "graph_hash": "sha256 of the graph file",
+      "generated_at": "ISO8601",
+      "node_count": 320
+    }
   },
 
   "entity_map": {
@@ -133,7 +140,29 @@ Symbols are not decorative. High-entropy tokens like 🔴 increase attention wei
 
 ---
 
-## Node Architecture (ACTP-N)
+## Structural Memory (`code_graph_ref`)
+
+ACTP's `decisions` and `entity_map` fields capture **declarative memory** — what was decided and why. They don't capture **structural memory** — how the code is actually wired together (imports, call graphs, dependencies).
+
+`artifacts.code_graph_ref` is an optional pointer to a precomputed codebase graph (e.g. from [Graphify](https://github.com/Graphify-Labs/graphify)), so a packet can carry both kinds of memory without duplicating either:
+
+```json
+"code_graph_ref": {
+  "tool": "graphify",
+  "graph_path": "graph.json",
+  "graph_hash": "sha256...",
+  "generated_at": "ISO8601",
+  "node_count": 320
+}
+```
+
+Design rules:
+- **Reference only, never embedded.** The graph itself lives wherever the project keeps it (`graph_path`, relative to the project root). ACTP packets stay lightweight.
+- **`graph_hash` enables staleness detection.** `actp summary` recomputes the hash of the local graph file and flags the reference as `STALE` if it no longer matches — a receiving model should not trust a stale structural map.
+- **`node_count` is a usage hint, not a rule.** Graph tools like Graphify report diminishing returns below roughly 500 files; consumers can use this field to decide whether resolving the graph is worth it for a given project.
+- **Optional in every sense.** Projects without a code graph simply omit the field. Nothing else in the schema depends on it.
+
+---
 
 ACTP defines two separate specs:
 
@@ -264,18 +293,6 @@ The protocol is open. The tooling is where value is captured.
 🚧 Early draft — open for discussion and contribution.
 
 This spec was developed collaboratively across Claude, ChatGPT, and Gemini sessions — itself a live proof of concept for ACTP.
-
-## Ideas / Roadmap
-
-- **Session Tracking**: Add a `sessions` array to the spec that automatically logs each AI work session — start/end timestamps, summary of changes, decisions made, files modified. This enables full project history across AI sessions.
-
-- **AI-to-AI Handoff**: Use session data to seamlessly transfer context between different AI models. Start a project with Claude, continue with ChatGPT, review with Gemini — without losing any context.
-
-- **"Session End" Button**: Frontend implementations (like Maestro) can add a "Session Bitti" button that auto-generates an `.actp` JSON export of the current session, ready to import into any AI.
-
-- **Multi-Model Synthesis Logging**: When multiple models answer the same question (orchestration tools), log each model's response and the synthesis result as part of the session record.
-
-- **Import/Resume**: Load a previous `.actp` file to resume exactly where you left off — the AI reads the file and has full context of all past decisions, code state, and open questions.
 
 ## Contributing
 
