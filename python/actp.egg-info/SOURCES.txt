@@ -1,7 +1,0 @@
-pyproject.toml
-actp.egg-info/PKG-INFO
-actp.egg-info/SOURCES.txt
-actp.egg-info/dependency_links.txt
-actp.egg-info/entry_points.txt
-actp.egg-info/requires.txt
-actp.egg-info/top_level.txt
