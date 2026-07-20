@@ -1,0 +1,17 @@
+click>=8.0
+
+[all]
+jsonschema>=4.0
+pathspec>=0.11
+
+[dev]
+pytest>=7.0
+pytest-cov
+black
+flake8
+
+[gitignore]
+pathspec>=0.11
+
+[schema]
+jsonschema>=4.0
