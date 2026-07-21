@@ -213,7 +213,7 @@ class ACTPPacket:
                     {
                         "id": cs.id,
                         "lang": cs.lang,
-                        "content": cs.content,
+                        "content": cs.content if cs.content is not None else "",
                         "summary": cs.summary,
                     }
                     for cs in self.artifacts.code_snippets
