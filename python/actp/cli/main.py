@@ -11,7 +11,7 @@ try:
 except ImportError:
     ACTP_VERSION = "0.1-dev"
 
-from actp.core.packager import ACTPPackagerFactory
+from actp.core.packager import ACTPPackagerFactory, ACTPExtractor
 from actp.validator import ACTPValidator
 
 
@@ -66,7 +66,7 @@ def pack(project_path, output, name, goal, depth, created_by, model):
             json.dump(packet_dict, f, indent=2, ensure_ascii=False)
         
         # Stat'lar
-        num_files = len(packet.artifacts.code_snippets) if hasattr(packet, 'artifacts') else 0
+        num_files = len(packet.files) if hasattr(packet, 'files') else 0
         num_decisions = len(packet.decisions)
         num_symbols = len(packet.symbol_legend)
         
@@ -154,6 +154,17 @@ def inspect(actp_file):
         click.echo(f"   Created: {data.get('created_at', 'unknown')}")
         click.echo(f"   @context: {data.get('@context', 'unknown')}")
         click.echo(f"   Model: {data.get('source_model', 'unknown')}")
+        
+        # Files
+        files = data.get('files', [])
+        click.echo(f"\n📁 Files ({len(files)})")
+        for i, file_info in enumerate(files[:5], 1):
+            if isinstance(file_info, dict):
+                path = file_info.get('path', '?')
+                size = file_info.get('size', 0)
+                click.echo(f"   [{i}] {path} ({size} bytes)")
+        if len(files) > 5:
+            click.echo(f"   ... and {len(files) - 5} more")
         
         # Decisions
         decisions = data.get('decisions', [])
@@ -264,6 +275,38 @@ Model: {data.get('source_model', 'Unknown')}
         
     except Exception as e:
         raise click.ClickException(f"Export error: {e}")
+
+
+@cli.command()
+@click.argument('actp_file', type=click.Path(exists=True))
+@click.option('--output', '-o', type=click.Path(), default='./restored',
+              help='Output directory (default: ./restored)')
+def unpack(actp_file, output):
+    """Extract files from ACTP package
+    
+    Restores the original directory structure from the packet.
+    
+    Example:
+        actp unpack context.actp --output ./restored
+    """
+    try:
+        click.echo(f"🔓 Unpacking '{actp_file}'...")
+        
+        # Dosyaları çıkar
+        extracted_count = ACTPExtractor.extract_from_file(
+            packet_file=Path(actp_file),
+            output_dir=Path(output)
+        )
+        
+        click.echo(f"✅ Unpacked {extracted_count} files to '{output}'")
+        click.echo(f"   Directory structure restored")
+        
+    except FileNotFoundError as e:
+        raise click.ClickException(f"File not found: {e}")
+    except json.JSONDecodeError as e:
+        raise click.ClickException(f"Invalid ACTP file: {e}")
+    except Exception as e:
+        raise click.ClickException(f"Unpack error: {e}")
 
 
 @cli.command()
