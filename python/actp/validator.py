@@ -1,9 +1,20 @@
+"""
+ACTP Validator - JSON-LD uyumlu paketleri doğrula
+"""
 import json
 import hashlib
 from pathlib import Path
-from typing import Tuple, List
+from typing import Tuple, List, Dict, Any
+
 
 class ACTPValidator:
+    """
+    ACTP Paketi Validator
+    - Zorunlu alanları kontrol et
+    - Checksum'ları doğrula
+    - Vocabulary hash'i doğrula
+    - Karar alanlarını kontrol et
+    """
     
     def __init__(self, strict_mode: bool = False):
         self.strict_mode = strict_mode
@@ -11,6 +22,7 @@ class ACTPValidator:
         self.warnings: List[str] = []
     
     def validate_file(self, file_path: Path) -> Tuple[bool, List[str], List[str]]:
+        """Dosyayı yükle ve doğrula"""
         self.errors = []
         self.warnings = []
         
@@ -24,125 +36,221 @@ class ACTPValidator:
             self.errors.append(f"Dosya bulunamadı: {file_path}")
             return False, self.errors, self.warnings
         
-        self._validate_required_fields(data)
+        return self.validate_data(data)
+    
+    def validate_data(self, data: Dict[str, Any]) -> Tuple[bool, List[str], List[str]]:
+        """Veriyi doğrula"""
+        self.errors = []
+        self.warnings = []
+        
+        # JSON-LD zorunlu alanlar
+        self._validate_json_ld_fields(data)
+        
+        # Proje tanımı
+        self._validate_project(data.get('project', {}))
+        
+        # Kararlar
         self._validate_decisions(data.get('decisions', []))
-        self._validate_symbol_legend(data.get('symbol_legend', []))
-        self._validate_vocabulary(data.get('vocabulary', []))
-        self._validate_open_questions(data.get('open_questions', []))
-        self._validate_blockers(data.get('blockers', []))
-        self._validate_checksums(data.get('files', []))
+        
+        # Sembol sözlüğü ve hash
+        self._validate_symbol_legend(data.get('symbol_legend', {}))
         self._validate_vocabulary_hash(data)
+        
+        # Tasks
+        self._validate_tasks(data.get('tasks', []))
+        
+        # Artifacts
+        self._validate_artifacts(data.get('artifacts', {}))
+        
+        # Diğer alanlar
+        self._validate_optional_fields(data)
         
         return len(self.errors) == 0, self.errors, self.warnings
     
-    def _validate_required_fields(self, data: dict) -> None:
-        required = ['version', 'project_name', 'files', 'metadata']
+    def _validate_json_ld_fields(self, data: dict) -> None:
+        """JSON-LD zorunlu alanları kontrol et"""
+        required = ['@context', '@type', 'actp_version', 'created_at', 'project', 'decisions', 'vocabulary_hash', 'symbol_legend']
+        
         for field in required:
             if field not in data:
                 self.errors.append(f"Zorunlu alan eksik: {field}")
         
-        if 'metadata' in data:
-            meta = data['metadata']
-            if 'created_at' not in meta:
-                self.errors.append("metadata.created_at eksik")
-            if 'updated_at' not in meta:
-                self.errors.append("metadata.updated_at eksik")
+        # Sabit değerleri kontrol et
+        if data.get('@context') != 'https://actp.dev/schema/v0.1':
+            self.errors.append(f"@context yanlış: {data.get('@context')}")
+        
+        if data.get('@type') != 'ACTPPacket':
+            self.errors.append(f"@type yanlış: {data.get('@type')}")
+        
+        if data.get('actp_version') != '0.1':
+            self.errors.append(f"actp_version yanlış: {data.get('actp_version')}")
+    
+    def _validate_project(self, project: dict) -> None:
+        """Proje tanımını kontrol et"""
+        if not isinstance(project, dict):
+            self.errors.append("project bir dictionary olmalı")
+            return
+        
+        required = ['name', 'goal']
+        for field in required:
+            if field not in project:
+                self.errors.append(f"project.{field} eksik")
+        
+        # Optional alanlar
+        if 'constraints' in project and not isinstance(project['constraints'], list):
+            self.errors.append("project.constraints bir liste olmalı")
+        
+        if 'soft_preferences' in project and not isinstance(project['soft_preferences'], list):
+            self.errors.append("project.soft_preferences bir liste olmalı")
     
     def _validate_decisions(self, decisions: list) -> None:
+        """Kararları kontrol et"""
         if not isinstance(decisions, list):
             self.errors.append("decisions bir liste olmalı")
             return
         
         for i, decision in enumerate(decisions):
-            required = ['id', 'title', 'description', 'context', 'alternatives_considered', 'rationale']
+            if not isinstance(decision, dict):
+                self.errors.append(f"Decision #{i} bir dictionary olmalı")
+                continue
+            
+            # Zorunlu alanlar
+            required = ['id', 'priority', 'certainty', 'mutability', 'content']
             for field in required:
                 if field not in decision:
                     self.errors.append(f"Decision #{i} - {field} eksik")
             
-            if not isinstance(decision.get('alternatives_considered', []), list):
-                self.errors.append(f"Decision #{i} - alternatives_considered bir liste olmalı")
+            # Enum kontrolü
+            if 'priority' in decision and decision['priority'] not in ['P0', 'P1', 'P2']:
+                self.errors.append(f"Decision #{i} - priority geçersiz: {decision['priority']}")
+            
+            if 'certainty' in decision and decision['certainty'] not in ['HIGH', 'MEDIUM', 'LOW']:
+                self.errors.append(f"Decision #{i} - certainty geçersiz: {decision['certainty']}")
+            
+            if 'mutability' in decision and decision['mutability'] not in ['LOCKED', 'FLEXIBLE']:
+                self.errors.append(f"Decision #{i} - mutability geçersiz: {decision['mutability']}")
     
-    def _validate_symbol_legend(self, symbols: list) -> None:
-        if not isinstance(symbols, list):
-            self.errors.append("symbol_legend bir liste olmalı")
+    def _validate_symbol_legend(self, symbol_legend: dict) -> None:
+        """Sembol sözlüğünü kontrol et"""
+        if not isinstance(symbol_legend, dict):
+            self.errors.append("symbol_legend bir dictionary olmalı")
             return
         
-        for i, symbol in enumerate(symbols):
-            required = ['symbol', 'meaning', 'usage_context']
-            for field in required:
-                if field not in symbol:
-                    self.errors.append(f"Symbol #{i} - {field} eksik")
-    
-    def _validate_vocabulary(self, vocab: list) -> None:
-        if not isinstance(vocab, list):
-            self.errors.append("vocabulary bir liste olmalı")
-            return
-        
-        for i, entry in enumerate(vocab):
-            required = ['term', 'definition', 'context']
-            for field in required:
-                if field not in entry:
-                    self.errors.append(f"Vocabulary #{i} - {field} eksik")
-    
-    def _validate_open_questions(self, questions: list) -> None:
-        if not isinstance(questions, list):
-            self.errors.append("open_questions bir liste olmalı")
-            return
-        
-        for i, question in enumerate(questions):
-            required = ['id', 'question', 'context', 'priority']
-            for field in required:
-                if field not in question:
-                    self.errors.append(f"OpenQuestion #{i} - {field} eksik")
-            
-            if question.get('priority') not in ['high', 'medium', 'low']:
-                self.warnings.append(f"OpenQuestion #{i} - priority bilinmiyor: {question.get('priority')}")
-    
-    def _validate_blockers(self, blockers: list) -> None:
-        if not isinstance(blockers, list):
-            self.errors.append("blockers bir liste olmalı")
-            return
-        
-        for i, blocker in enumerate(blockers):
-            required = ['id', 'title', 'description', 'severity']
-            for field in required:
-                if field not in blocker:
-                    self.errors.append(f"Blocker #{i} - {field} eksik")
-            
-            if blocker.get('severity') not in ['critical', 'high', 'medium', 'low']:
-                self.warnings.append(f"Blocker #{i} - severity bilinmiyor: {blocker.get('severity')}")
-    
-    def _validate_checksums(self, files: list) -> None:
-        for i, file_obj in enumerate(files):
-            if 'checksum' not in file_obj:
-                self.warnings.append(f"File #{i} ({file_obj.get('path', '?')}) - checksum eksik")
-                continue
-            
-            if file_obj.get('type') == 'binary':
-                continue
-            
-            checksum = file_obj['checksum']
-            if len(checksum) != 64 or not all(c in '0123456789abcdef' for c in checksum.lower()):
-                self.errors.append(f"File #{i} - geçersiz checksum format: {checksum[:16]}...")
+        # Her symbol değeri string olmalı
+        for symbol, value in symbol_legend.items():
+            if not isinstance(value, str):
+                self.warnings.append(f"symbol_legend[{symbol}] string olmalı, {type(value).__name__} bulundu")
     
     def _validate_vocabulary_hash(self, data: dict) -> None:
+        """Vocabulary hash'i doğrula"""
         vocab_hash = data.get('vocabulary_hash', '')
-        vocabulary = data.get('vocabulary', [])
+        symbol_legend = data.get('symbol_legend', {})
         
-        if not vocab_hash and vocabulary:
-            self.warnings.append("vocabulary_hash boş ama vocabulary dolu")
+        if not vocab_hash and symbol_legend:
+            self.warnings.append("vocabulary_hash boş ama symbol_legend dolu")
             return
         
         if vocab_hash:
-            vocab_json = json.dumps(vocabulary, sort_keys=True)
-            calculated_hash = hashlib.sha256(vocab_json.encode()).hexdigest()
+            # Hash'i hesapla ve karşılaştır
+            vocab_json = json.dumps(symbol_legend, sort_keys=True, ensure_ascii=False)
+            calculated_hash = hashlib.sha256(vocab_json.encode('utf-8')).hexdigest()
             
             if calculated_hash != vocab_hash:
                 self.errors.append(
-                    f"vocabulary_hash uyuşmuyor: {vocab_hash[:16]}... vs {calculated_hash[:16]}..."
+                    f"vocabulary_hash uyuşmuyor: "
+                    f"dosyadaki={vocab_hash[:16]}... "
+                    f"hesaplanan={calculated_hash[:16]}..."
                 )
     
+    def _validate_tasks(self, tasks: list) -> None:
+        """Görevleri kontrol et"""
+        if not isinstance(tasks, list):
+            self.errors.append("tasks bir liste olmalı")
+            return
+        
+        for i, task in enumerate(tasks):
+            if not isinstance(task, dict):
+                self.errors.append(f"Task #{i} bir dictionary olmalı")
+                continue
+            
+            required = ['id', 'status', 'description']
+            for field in required:
+                if field not in task:
+                    self.errors.append(f"Task #{i} - {field} eksik")
+            
+            if 'status' in task and task['status'] not in ['done', 'pending', 'blocked']:
+                self.errors.append(f"Task #{i} - status geçersiz: {task['status']}")
+    
+    def _validate_artifacts(self, artifacts: dict) -> None:
+        """Artifacts'ı kontrol et"""
+        if not isinstance(artifacts, dict):
+            if artifacts:  # Boşsa warning yapma
+                self.errors.append("artifacts bir dictionary olmalı")
+            return
+        
+        # Code snippets
+        code_snippets = artifacts.get('code_snippets', [])
+        if not isinstance(code_snippets, list):
+            self.errors.append("artifacts.code_snippets bir liste olmalı")
+        else:
+            for i, snippet in enumerate(code_snippets):
+                if not isinstance(snippet, dict):
+                    self.errors.append(f"CodeSnippet #{i} bir dictionary olmalı")
+                    continue
+                
+                required = ['id', 'lang', 'content']
+                for field in required:
+                    if field not in snippet:
+                        self.errors.append(f"CodeSnippet #{i} - {field} eksik")
+        
+        # References
+        references = artifacts.get('references', [])
+        if not isinstance(references, list):
+            self.errors.append("artifacts.references bir liste olmalı")
+    
+    def _validate_optional_fields(self, data: dict) -> None:
+        """Opsiyonel alanları kontrol et"""
+        # source_model
+        if 'source_model' in data:
+            valid_models = ['claude', 'chatgpt', 'gemini', 'other']
+            if data['source_model'] not in valid_models:
+                self.warnings.append(f"source_model bilinmiyor: {data['source_model']}")
+        
+        # open_questions
+        open_questions = data.get('open_questions', [])
+        if not isinstance(open_questions, list):
+            self.errors.append("open_questions bir liste olmalı")
+        
+        # next_steps
+        next_steps = data.get('next_steps', [])
+        if not isinstance(next_steps, list):
+            self.errors.append("next_steps bir liste olmalı")
+        
+        # entity_map
+        entity_map = data.get('entity_map', {})
+        if not isinstance(entity_map, dict):
+            self.errors.append("entity_map bir dictionary olmalı")
+        
+        # priority_matrix
+        priority_matrix = data.get('priority_matrix', [])
+        if not isinstance(priority_matrix, list):
+            self.errors.append("priority_matrix bir liste olmalı")
+        else:
+            for i, item in enumerate(priority_matrix):
+                if not isinstance(item, dict):
+                    self.errors.append(f"PriorityMatrixItem #{i} bir dictionary olmalı")
+                    continue
+                
+                if 'segment' not in item or 'weight' not in item:
+                    self.errors.append(f"PriorityMatrixItem #{i} - segment ve weight gerekli")
+                
+                if 'weight' in item:
+                    weight = item['weight']
+                    if not isinstance(weight, (int, float)) or not (0.0 <= weight <= 1.0):
+                        self.errors.append(f"PriorityMatrixItem #{i} - weight 0.0-1.0 arasında olmalı")
+    
     def print_report(self) -> None:
+        """Doğrulama raporunu yazdır"""
         if self.errors:
             print("❌ HATALAR:")
             for error in self.errors:
