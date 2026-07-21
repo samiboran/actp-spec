@@ -1,3 +1,6 @@
+"""
+ACTP CLI - Agent Context Transfer Protocol Command Line Interface
+"""
 import click
 import json
 from pathlib import Path
@@ -6,127 +9,314 @@ from importlib.metadata import version as get_version
 try:
     ACTP_VERSION = get_version("actp")
 except ImportError:
-    ACTP_VERSION = "0.1.3-dev"
+    ACTP_VERSION = "0.1-dev"
 
-from actp.core.packager import ACTPPackager
-from actp.core.schema import ACTPValidator
+from actp.core.packager import ACTPPackagerFactory
+from actp.validator import ACTPValidator
 
 
 @click.group()
 @click.version_option(version=ACTP_VERSION, prog_name="actp")
 def cli():
-    """ACTP - Agent Context Transfer Protocol CLI"""
+    """ACTP - Agent Context Transfer Protocol CLI
+    
+    Pack your project into portable AI context packets.
+    JSON-LD compatible, semantically-rich, model-agnostic.
+    """
     pass
 
 
 @cli.command()
 @click.argument('project_path', type=click.Path(exists=True))
-@click.option('--output', '-o', default='context.actp', help='Output file')
-@click.option('--depth', '-d', default=3, help='Directory traversal depth')
-@click.option('--strict-secrets', is_flag=True, help='Fail if secrets detected')
-def pack(project_path, output, depth, strict_secrets):
-    """Pack a project directory into ACTP format"""
-    packager = ACTPPackager()
-    result = packager.pack(
-        Path(project_path), max_depth=depth, strict_secrets=strict_secrets
-    )
-
-    with open(output, 'w') as f:
-        json.dump(result, f, indent=2)
-
-    click.echo(f"Packed {result['metadata']['total_files']} files to {output}")
-    click.echo(f"  Estimated tokens: {result['metadata']['total_tokens_estimate']}")
-
-    if result['metadata']['warnings']:
-        click.echo(f"  Warnings ({len(result['metadata']['warnings'])}):")
-        for w in result['metadata']['warnings'][:5]:
-            click.echo(f"    - {w}")
+@click.option('--output', '-o', default='context.actp', 
+              help='Output ACTP file (default: context.actp)')
+@click.option('--name', '-n', required=True,
+              help='Project name')
+@click.option('--goal', '-g', required=True,
+              help='Project goal (one sentence)')
+@click.option('--depth', '-d', default=10, type=int,
+              help='Maximum directory depth to traverse')
+@click.option('--created-by', default=None,
+              help='Your name/identifier')
+@click.option('--model', '-m', default=None,
+              type=click.Choice(['claude', 'chatgpt', 'gemini', 'other']),
+              help='AI model context')
+def pack(project_path, output, name, goal, depth, created_by, model):
+    """Pack a project directory into ACTP format
+    
+    Example:
+        actp pack . --name "ACTP" --goal "Protocol implementation" -o pkg.actp
+    """
+    try:
+        click.echo(f"📦 Packing '{name}'...")
+        click.echo(f"   Goal: {goal}")
+        
+        packet = ACTPPackagerFactory.pack_directory(
+            directory=Path(project_path),
+            project_name=name,
+            project_goal=goal,
+            created_by=created_by,
+            source_model=model,
+            max_depth=depth
+        )
+        
+        # Dosyaya kaydet
+        packet_dict = packet.to_dict()
+        with open(output, 'w', encoding='utf-8') as f:
+            json.dump(packet_dict, f, indent=2, ensure_ascii=False)
+        
+        # Stat'lar
+        num_files = len(packet.artifacts.code_snippets) if hasattr(packet, 'artifacts') else 0
+        num_decisions = len(packet.decisions)
+        num_symbols = len(packet.symbol_legend)
+        
+        click.echo(f"✅ Packed to '{output}'")
+        click.echo(f"   Files indexed: {num_files}")
+        click.echo(f"   Decisions: {num_decisions}")
+        click.echo(f"   Symbol legend: {num_symbols}")
+        click.echo(f"   @context: {packet.context}")
+        
+    except Exception as e:
+        raise click.ClickException(f"Failed to pack: {e}")
 
 
 @cli.command()
 @click.argument('actp_file', type=click.Path(exists=True))
-@click.option('--output-dir', '-o', default='.', help='Output directory')
-def unpack(actp_file, output_dir):
-    """Unpack ACTP file to directory (path traversal protected)"""
-    packager = ACTPPackager()
-
-    # Guvenli JSON yukleme
+def validate(actp_file):
+    """Validate ACTP package against schema
+    
+    Checks for:
+    - JSON-LD structure (@context, @type, actp_version)
+    - Required fields (project, decisions, symbol_legend)
+    - Vocabulary hash consistency
+    - Decision priority/certainty/mutability enums
+    """
     try:
-        with open(actp_file) as f:
+        click.echo(f"🔍 Validating '{actp_file}'...")
+        
+        # Dosyayı yükle
+        with open(actp_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
+        
+        # Doğrula
+        validator = ACTPValidator()
+        is_valid, errors, warnings = validator.validate_data(data)
+        
+        if errors:
+            click.echo("❌ Validation failed:")
+            for error in errors:
+                click.echo(f"   ERROR: {error}")
+            raise click.ClickException("Invalid ACTP packet")
+        
+        if warnings:
+            click.echo("⚠️  Warnings:")
+            for warning in warnings:
+                click.echo(f"   WARNING: {warning}")
+        
+        click.echo("✅ Validation passed")
+        click.echo(f"   Project: {data.get('project', {}).get('name', 'unknown')}")
+        click.echo(f"   Decisions: {len(data.get('decisions', []))}")
+        click.echo(f"   Created: {data.get('created_at', 'unknown')}")
+        
     except json.JSONDecodeError as e:
         raise click.ClickException(f"Invalid JSON: {e}")
-
-    packager.unpack(data, Path(output_dir))
-    click.echo(f"Unpacked to {output_dir}")
+    except Exception as e:
+        raise click.ClickException(f"Validation error: {e}")
 
 
 @cli.command()
 @click.argument('actp_file', type=click.Path(exists=True))
 def inspect(actp_file):
-    """Inspect ACTP package metadata"""
+    """Inspect ACTP package contents
+    
+    Shows package metadata, decisions, tasks, and statistics.
+    """
     try:
-        with open(actp_file) as f:
+        with open(actp_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
+        
+        # Header
+        project = data.get('project', {})
+        click.echo(f"\n📋 ACTP Package: {actp_file}")
+        click.echo(f"{'=' * 60}")
+        
+        # Project info
+        click.echo(f"\n🎯 Project")
+        click.echo(f"   Name: {project.get('name', 'unknown')}")
+        click.echo(f"   Goal: {project.get('goal', 'unknown')}")
+        if project.get('constraints'):
+            click.echo(f"   Constraints: {len(project['constraints'])} rule(s)")
+        if project.get('soft_preferences'):
+            click.echo(f"   Preferences: {len(project['soft_preferences'])} item(s)")
+        
+        # Metadata
+        click.echo(f"\n📅 Metadata")
+        click.echo(f"   Created: {data.get('created_at', 'unknown')}")
+        click.echo(f"   @context: {data.get('@context', 'unknown')}")
+        click.echo(f"   Model: {data.get('source_model', 'unknown')}")
+        
+        # Decisions
+        decisions = data.get('decisions', [])
+        click.echo(f"\n📌 Decisions ({len(decisions)})")
+        for i, dec in enumerate(decisions[:5], 1):
+            click.echo(f"   [{i}] {dec.get('id', '?')} ({dec.get('priority', '?')}) - {dec.get('content', '')[:40]}...")
+        if len(decisions) > 5:
+            click.echo(f"   ... and {len(decisions) - 5} more")
+        
+        # Tasks
+        tasks = data.get('tasks', [])
+        if tasks:
+            click.echo(f"\n✅ Tasks ({len(tasks)})")
+            for i, task in enumerate(tasks[:5], 1):
+                status = task.get('status', '?')
+                click.echo(f"   [{status}] {task.get('id', '?')} - {task.get('description', '')[:40]}...")
+        
+        # Open questions
+        questions = data.get('open_questions', [])
+        if questions:
+            click.echo(f"\n❓ Open Questions ({len(questions)})")
+            for i, q in enumerate(questions[:3], 1):
+                click.echo(f"   {i}. {q[:50]}...")
+        
+        # Next steps
+        steps = data.get('next_steps', [])
+        if steps:
+            click.echo(f"\n➡️  Next Steps ({len(steps)})")
+            for i, step in enumerate(steps[:3], 1):
+                click.echo(f"   {i}. {step[:50]}...")
+        
+        # Summary
+        click.echo(f"\n📊 Summary")
+        click.echo(f"   Symbol legend: {len(data.get('symbol_legend', {}))}")
+        click.echo(f"   Entity map: {len(data.get('entity_map', {}))}")
+        click.echo(f"   Priority matrix: {len(data.get('priority_matrix', []))}")
+        
+        click.echo(f"\n{'=' * 60}\n")
+        
     except json.JSONDecodeError as e:
         raise click.ClickException(f"Invalid JSON: {e}")
-
-    click.echo(f"ACTP Package: {actp_file}")
-    click.echo(f"  Version: {data.get('version', 'unknown')}")
-    click.echo(f"  Project: {data.get('project_name', 'unknown')}")
-    click.echo(f"  Generated: {data.get('generated_at', 'unknown')}")
-    click.echo(f"  Files: {data['metadata']['total_files']}")
-    click.echo(f"  Est. Tokens: {data['metadata']['total_tokens_estimate']}")
-
-    types = {}
-    for f in data.get('files', []):
-        t = f.get('type', 'unknown')
-        types[t] = types.get(t, 0) + 1
-    if types:
-        click.echo("  File types:")
-        for t, count in sorted(types.items(), key=lambda x: -x[1])[:5]:
-            click.echo(f"    {t}: {count}")
+    except Exception as e:
+        raise click.ClickException(f"Inspect error: {e}")
 
 
 @cli.command()
 @click.argument('actp_file', type=click.Path(exists=True))
-@click.option('--checksums', is_flag=True, help='Verify SHA-256 checksums')
-def validate(actp_file, checksums):
-    """Validate ACTP package against schema and checksums"""
-    # Guvenli JSON yukleme
+@click.argument('output_dir', type=click.Path(), default='.')
+def export(actp_file, output_dir):
+    """Export ACTP package contents to files
+    
+    Creates a directory with:
+    - decisions.json
+    - tasks.json
+    - metadata.json
+    - context.txt
+    """
     try:
-        with open(actp_file) as f:
+        with open(actp_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
-    except json.JSONDecodeError as e:
-        raise click.ClickException(f"Invalid JSON: {e}")
+        
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        click.echo(f"💾 Exporting to '{output_dir}'...")
+        
+        # Decisions
+        if data.get('decisions'):
+            with open(output_path / 'decisions.json', 'w', encoding='utf-8') as f:
+                json.dump(data['decisions'], f, indent=2, ensure_ascii=False)
+            click.echo(f"   ✓ decisions.json")
+        
+        # Tasks
+        if data.get('tasks'):
+            with open(output_path / 'tasks.json', 'w', encoding='utf-8') as f:
+                json.dump(data['tasks'], f, indent=2, ensure_ascii=False)
+            click.echo(f"   ✓ tasks.json")
+        
+        # Metadata
+        metadata = {
+            'project': data.get('project', {}),
+            'created_at': data.get('created_at'),
+            'source_model': data.get('source_model'),
+            'symbol_legend': data.get('symbol_legend', {}),
+        }
+        with open(output_path / 'metadata.json', 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, indent=2, ensure_ascii=False)
+        click.echo(f"   ✓ metadata.json")
+        
+        # Context summary
+        context_text = f"""# ACTP Context Export
 
-    validator = ACTPValidator()
+Project: {data.get('project', {}).get('name', 'Unknown')}
+Goal: {data.get('project', {}).get('goal', 'Unknown')}
 
-    # Schema dogrulama
-    is_valid, errors = validator.validate(data)
-    if not is_valid:
-        click.echo("Schema dogrulama basarisiz:")
-        for e in errors:
-            click.echo(f"  - {e}")
-        raise click.ClickException("Gecersiz ACTP paketi")
+Decisions: {len(data.get('decisions', []))}
+Tasks: {len(data.get('tasks', []))}
+Questions: {len(data.get('open_questions', []))}
 
-    click.echo("Schema dogrulama basarili")
+Generated: {data.get('created_at', 'Unknown')}
+Model: {data.get('source_model', 'Unknown')}
+"""
+        with open(output_path / 'context.txt', 'w', encoding='utf-8') as f:
+            f.write(context_text)
+        click.echo(f"   ✓ context.txt")
+        
+        click.echo(f"✅ Export complete")
+        
+    except Exception as e:
+        raise click.ClickException(f"Export error: {e}")
 
-    # Checksum dogrulama
-    if checksums:
-        ok, checksum_errors = validator.validate_checksums(data)
-        if not ok:
-            click.echo("Checksum dogrulama basarisiz:")
-            for e in checksum_errors:
-                click.echo(f"  - {e}")
-            raise click.ClickException("Checksum uyusmazligi")
-        click.echo("Checksum dogrulama basarili")
 
-    click.echo(f"{actp_file} gecerli")
+@cli.command()
+@click.argument('actp_file', type=click.Path(exists=True))
+@click.option('--format', '-f', default='json', 
+              type=click.Choice(['json', 'yaml', 'markdown']),
+              help='Output format')
+def summarize(actp_file, format):
+    """Summarize ACTP package as text
+    
+    Generates a human-readable summary of the packet.
+    """
+    try:
+        with open(actp_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        project = data.get('project', {})
+        
+        if format == 'markdown':
+            output = f"""# {project.get('name', 'ACTP Package')}
+
+## Goal
+{project.get('goal', 'No goal specified')}
+
+## Decisions ({len(data.get('decisions', []))})
+
+"""
+            for dec in data.get('decisions', []):
+                output += f"### {dec.get('id', '?')} - {dec.get('content', '?')}\n"
+                output += f"- **Priority:** {dec.get('priority', '?')}\n"
+                output += f"- **Certainty:** {dec.get('certainty', '?')}\n"
+                output += f"- **Mutability:** {dec.get('mutability', '?')}\n"
+                if dec.get('rationale'):
+                    output += f"- **Rationale:** {dec['rationale']}\n"
+                output += "\n"
+            
+            if data.get('next_steps'):
+                output += f"## Next Steps\n\n"
+                for step in data.get('next_steps', []):
+                    output += f"- {step}\n"
+            
+            click.echo(output)
+        else:
+            click.echo(json.dumps(data, indent=2, ensure_ascii=False))
+    
+    except Exception as e:
+        raise click.ClickException(f"Summarize error: {e}")
 
 
 def main():
+    """Main entry point"""
     cli()
+
 
 if __name__ == '__main__':
     main()
