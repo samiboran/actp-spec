@@ -1,0 +1,31 @@
+{
+  "version": "0.1.3",
+  "project_name": "hello-world",
+  "generated_at": "2026-07-21T03:15:00+00:00",
+  "files": [
+    {
+      "path": "main.py",
+      "content": "def hello():\n    return 'Hello, ACTP!'\n",
+      "size": 38,
+      "type": "python",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "README.md",
+      "content": "# Hello World\n\nSample project for ACTP demonstration.\n",
+      "size": 56,
+      "type": "markdown",
+      "sha256": "a3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "metadata": {
+    "total_files": 2,
+    "total_tokens_estimate": 23,
+    "excluded_dirs": [
+      "node_modules",
+      ".git"
+    ],
+    "warnings": [],
+    "generator": "actp-cli/0.1.3"
+  }
+}
