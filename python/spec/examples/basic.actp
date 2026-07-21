@@ -1,128 +1,132 @@
 {
-  "version": "1.0.0",
-  "project_name": "ACTP Basic Example",
-  "files": [
-    {
-      "path": "main.py",
-      "content": "def hello_world():\n    print(\"Hello, ACTP!\")\n\nif __name__ == \"__main__\":\n    hello_world()\n",
-      "size": 73,
-      "type": "code",
-      "checksum": "ff87344b8b8f17cf3649a5bb45a5e56de59af6c4db1c8a59b49d956cd9f6d9cf"
-    },
-    {
-      "path": "README.md",
-      "content": "# ACTP Basic Example\n\nThis is a basic example of an ACTP package.\n\n## Features\n- Semantic context capture\n- Decision tracking\n- Vocabulary management\n",
-      "size": 113,
-      "type": "text",
-      "checksum": "a1b2c3d4e5f6789abcdef0123456789a1b2c3d4e5f6789abcdef0123456789a"
-    }
-  ],
-  "metadata": {
-    "created_at": "2026-07-21T10:00:00",
-    "updated_at": "2026-07-21T10:00:00",
-    "created_by": "samiboran",
-    "model_context": "claude-3-sonnet",
-    "tags": [
-      "example",
-      "basic",
-      "actp"
+  "@context": "https://actp.dev/schema/v0.1",
+  "@type": "ACTPPacket",
+  "actp_version": "0.1",
+  "created_at": "2026-07-21T10:30:00Z",
+  "source_model": "claude-3-sonnet",
+  "vocabulary_hash": "f5a5a608d3dda5d8bc9d30ad6b8f679b8c8c8e8c8c8c8c8c8c8c8c8c8c8c8c",
+  "symbol_legend": {
+    "🔴": "priority=P0, mutability=LOCKED, certainty=HIGH",
+    "🟡": "priority=P1, mutability=FLEXIBLE, certainty=MEDIUM",
+    "🔵": "priority=P2, mutability=FLEXIBLE, certainty=LOW",
+    "🟢": "status=COMPLETED",
+    "🌫️": "certainty=LOW, hallucination_risk=true",
+    "🔗": "external_dependency=true"
+  },
+  "project": {
+    "name": "ACTP Basic Example",
+    "goal": "Demonstrate ACTP packet structure with semantic decisions and symbol legend",
+    "constraints": [
+      "Must support JSON-LD format",
+      "All decisions require priority level"
+    ],
+    "soft_preferences": [
+      "Use standard symbol legend",
+      "Include rationale for all decisions"
     ]
   },
   "decisions": [
     {
-      "id": "lang-choice",
-      "title": "Python olarak yazıldı",
-      "description": "Projeyi Python'da yazma kararı",
-      "context": "Basit ve hızlı prototipleme için Python seçildi",
-      "alternatives_considered": [
-        "JavaScript",
-        "Go",
-        "Rust"
-      ],
-      "rationale": "Python, hızlı geliştirme ve kolay okunabilirlik sağlar",
-      "date_made": "2026-07-20T09:00:00",
-      "impact": "Prototip hızlı bir şekilde geliştirildi"
-    }
-  ],
-  "symbol_legend": [
-    {
-      "symbol": "ACTP",
-      "meaning": "AI Context Transfer Protocol",
-      "usage_context": "Modeller arası bağlam aktarımı için protokol",
-      "related_symbols": [
-        "semantic",
-        "context",
-        "transfer"
-      ]
+      "id": "D1",
+      "priority": "P0",
+      "certainty": "HIGH",
+      "mutability": "LOCKED",
+      "content": "Use Python for implementation",
+      "symbol": "🔴",
+      "rationale": "Python provides rapid development, readability, and strong ecosystem for data processing",
+      "source_model": "claude-3-sonnet",
+      "hallucination_risk": false,
+      "external_dependency": false
     },
     {
-      "symbol": "Semantic Layer",
-      "meaning": "Karar ve anlam katmanı",
-      "usage_context": "Ham veriden ziyade anlamsal bilgi",
-      "related_symbols": [
-        "decisions",
-        "vocabulary",
-        "context"
-      ]
-    }
-  ],
-  "vocabulary": [
-    {
-      "term": "Context Transfer",
-      "definition": "Bir AI modelinden diğerine proje bağlamını aktarma",
-      "context": "ACTP'nin temel amacı",
-      "aliases": [
-        "context sharing",
-        "context migration"
-      ]
+      "id": "D2",
+      "priority": "P1",
+      "certainty": "MEDIUM",
+      "mutability": "FLEXIBLE",
+      "content": "Implement JSON-LD structure for semantic interoperability",
+      "symbol": "🟡",
+      "rationale": "JSON-LD provides standardized linked data format, enabling model interoperability",
+      "source_model": "claude-3-sonnet",
+      "hallucination_risk": false,
+      "external_dependency": false
     },
     {
-      "term": "Semantic",
-      "definition": "Anlamsal, ham veriden ziyade anlam taşıyan",
-      "context": "ACTP'nin belkisi - sadece ham dosya değil, anlam",
-      "aliases": [
-        "meaningful",
-        "intent-based"
-      ]
+      "id": "D3",
+      "priority": "P2",
+      "certainty": "LOW",
+      "mutability": "FLEXIBLE",
+      "content": "Support optional code graph references for large projects",
+      "symbol": "🔵",
+      "rationale": "Code graphs complement semantic layer with structural information, useful at scale",
+      "source_model": "claude-3-sonnet",
+      "hallucination_risk": true,
+      "external_dependency": true
+    }
+  ],
+  "tasks": [
+    {
+      "id": "T1",
+      "status": "done",
+      "description": "Define ACTP schema in JSON-LD",
+      "symbol": "🟢"
+    },
+    {
+      "id": "T2",
+      "status": "done",
+      "description": "Implement Python packager with semantic fields",
+      "symbol": "🟢"
+    },
+    {
+      "id": "T3",
+      "status": "pending",
+      "description": "Build validator for schema compliance",
+      "symbol": "🟡"
+    }
+  ],
+  "artifacts": {
+    "code_snippets": [
+      {
+        "id": "snippet-1",
+        "lang": "python",
+        "content": "def hello_world():\n    print(\"Hello, ACTP!\")\n\nif __name__ == \"__main__\":\n    hello_world()",
+        "summary": "Basic hello world function demonstrating ACTP integration"
+      }
+    ],
+    "references": [
+      "https://github.com/samiboran/actp-spec",
+      "actp.schema.json"
+    ],
+    "code_graph_ref": null
+  },
+  "entity_map": {
+    "ACTP": "AI Context Transfer Protocol",
+    "Semantic Layer": "Decision and meaning representation",
+    "Symbol Legend": "Emoji and symbol to meaning mapping"
+  },
+  "priority_matrix": [
+    {
+      "segment": "decisions",
+      "weight": 0.9
+    },
+    {
+      "segment": "artifacts",
+      "weight": 0.6
+    },
+    {
+      "segment": "tasks",
+      "weight": 0.3
     }
   ],
   "open_questions": [
-    {
-      "id": "scaling",
-      "question": "Büyük projeler için performans nasıl olacak?",
-      "context": "Binlerce dosyalı projelerde ACTP nasıl ölçeklenecek?",
-      "priority": "high",
-      "related_decisions": [
-        "lang-choice"
-      ]
-    },
-    {
-      "id": "standards",
-      "question": "Diğer protokollerle uyumluluğu nasıl sağlanacak?",
-      "context": "ACTP'nin endüstri standardı haline gelmesi için",
-      "priority": "medium",
-      "related_decisions": []
-    }
+    "How do we handle schema evolution and versioning?",
+    "What is the optimal compression strategy for large packets?",
+    "How do we prevent hallucination in cross-model transfers?"
   ],
-  "blockers": [
-    {
-      "id": "perf-issue",
-      "title": "Checksum hesaplama yavaş",
-      "description": "Büyük dosyalarda SHA-256 hesaplaması zaman alıyor",
-      "severity": "medium",
-      "related_decisions": [
-        "lang-choice"
-      ]
-    }
+  "next_steps": [
+    "Validate this example packet",
+    "Implement TypeScript CLI",
+    "Create comprehensive test suite"
   ],
-  "context": {
-    "project_stage": "prototype",
-    "team_size": 1,
-    "main_objectives": [
-      "Semantic context standardı oluştur",
-      "Model transferi test et",
-      "Community feedback al"
-    ]
-  },
-  "vocabulary_hash": "8f4e3c2b1a9d7f5e6c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e"
+  "dead_letter": [],
+  "integrity_hash": null
 }
