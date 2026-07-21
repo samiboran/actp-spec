@@ -362,7 +362,7 @@ class ACTPExtractor:
         Returns:
             Çıkarılan dosya sayısı
         """
-        output_dir = Path(output_dir)
+        output_dir = Path(output_dir).resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
         
         extracted_count = 0
@@ -372,8 +372,23 @@ class ACTPExtractor:
                 path = file_data.get('path')
                 content = file_data.get('content')
                 
-                if path and content is not None:
-                    file_path = output_dir / path
+                if isinstance(path, str) and path and content is not None:
+                    relative_path = Path(path)
+
+                    # Absolute kaynak yolları extract sırasında normalize et
+                    if relative_path.is_absolute():
+                        relative_path = Path(relative_path.name)
+
+                    # Path traversal koruması
+                    if any(part == '..' for part in relative_path.parts):
+                        print(f"⚠️  Güvensiz yol atlandı: {path}")
+                        continue
+
+                    file_path = (output_dir / relative_path).resolve()
+                    if output_dir not in file_path.parents and file_path != output_dir:
+                        print(f"⚠️  Güvensiz yol atlandı: {path}")
+                        continue
+
                     file_path.parent.mkdir(parents=True, exist_ok=True)
                     
                     try:
@@ -390,8 +405,12 @@ class ACTPExtractor:
         """
         JSON paket dosyasından çıkart
         """
-        with open(packet_file, 'r', encoding='utf-8') as f:
-            packet_data = json.load(f)
+        try:
+            with open(packet_file, 'r', encoding='utf-8') as f:
+                packet_data = json.load(f)
+        except FileNotFoundError:
+            print(f"⚠️  Paket dosyası bulunamadı: {packet_file}")
+            return 0
         
         extractor = ACTPExtractor(packet_data)
         return extractor.extract_to_directory(output_dir)
