@@ -116,7 +116,7 @@ class ACTPPackager:
         size = len(file_bytes)
         
         actp_file = ACTPFile(
-            path=str(file_path),
+            path=file_path.name,
             content=content,
             size=size,
             type=file_type,
@@ -377,7 +377,7 @@ class ACTPExtractor:
 
                     # Absolute kaynak yolları extract sırasında normalize et
                     if relative_path.is_absolute():
-                        relative_path = Path(relative_path.name)
+                        relative_path = Path(*relative_path.parts[1:])
 
                     # Path traversal koruması
                     if any(part == '..' for part in relative_path.parts):
@@ -385,7 +385,7 @@ class ACTPExtractor:
                         continue
 
                     file_path = (output_dir / relative_path).resolve()
-                    if output_dir not in file_path.parents and file_path != output_dir:
+                    if not file_path.is_relative_to(output_dir):
                         print(f"⚠️  Güvensiz yol atlandı: {path}")
                         continue
 
