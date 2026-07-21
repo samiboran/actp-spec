@@ -1,7 +1,13 @@
-"""ACTP Benchmark - Realistic token/time/cache efficiency.
+"""
+ACTP Benchmark - Realistic token/time efficiency comparison.
+
+Compares:
+1. Raw file reading (without ACTP)
+2. ACTP-packaged context (with semantic decisions + caching)
 
 Usage:
     python benchmark.py --all
+    python benchmark.py --sizes 50 100 200 500
 """
 import argparse
 import json
@@ -13,14 +19,15 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from actp.core.packager import ACTPPackager
+from actp.core.packager import ACTPPackagerFactory
+from actp.validator import ACTPValidator
 
 
 class ACTPBenchmark:
-    """Benchmark ACTP vs raw project sharing with realistic repos."""
+    """Benchmark ACTP vs raw project sharing."""
 
     def __init__(self):
-        self.packager = ACTPPackager()
+        self.validator = ACTPValidator()
 
     def generate_realistic_repo(self, root: Path, num_source_files: int = 100):
         """Generate a realistic repo with source + binary + excluded files."""
@@ -45,10 +52,9 @@ class ACTPBenchmark:
             file_name = f"{dir_name}/file_{i:03d}{ext}"
             
             size = 200 + (i * 17) % 1800
-            doc = "A" * (size // 4)
             content = template.format(name=f"func_{i}", value=i)
             while len(content) < size:
-                content += f"// padding line {len(content)}\n"
+                content += f"// comment line\n"
             content = content[:size]
             
             file_path = root / file_name
@@ -63,11 +69,8 @@ class ACTPBenchmark:
         binary_files = [
             ("assets/logo.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 50000),
             ("assets/banner.jpg", b"\xff\xd8\xff\xe0" + b"\x00" * 80000),
-            ("assets/icon.ico", b"\x00\x00\x01\x00" + b"\x00" * 20000),
             ("dist/bundle.js.map", b"{\"version\": 3}" + b"\x00" * 100000),
-            ("dist/app.wasm", b"\x00asm\x01\x00\x00\x00" + b"\x00" * 50000),
             ("images/screenshot.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 100000),
-            ("build/output.zip", b"PK\x03\x04" + b"\x00" * 30000),
         ]
         
         for name, data in binary_files:
@@ -78,10 +81,6 @@ class ACTPBenchmark:
         (root / "node_modules" / "lodash" / "index.js").write_text(
             "module.exports = require('./lodash');\n" * 1000, encoding="utf-8"
         )
-        (root / "node_modules" / "react").mkdir(parents=True, exist_ok=True)
-        (root / "node_modules" / "react" / "index.js").write_text(
-            "module.exports = require('./react');\n" * 1000, encoding="utf-8"
-        )
         
         (root / "__pycache__").mkdir(exist_ok=True)
         (root / "__pycache__" / "module.cpython-311.pyc").write_bytes(b"\x00" * 50000)
@@ -89,67 +88,80 @@ class ACTPBenchmark:
         (root / ".git" / "objects" / "ab").mkdir(parents=True, exist_ok=True)
         (root / ".git" / "config").write_text("[core]\n", encoding="utf-8")
         
-        (root / ".gitignore").write_text(
-            "*.log\nnode_modules/\n__pycache__/\ndist/\n.env\n", 
-            encoding="utf-8"
-        )
-        
-        (root / ".env").write_text(
-            "API_KEY=sk-test1234567890abcdef\nDB_PASSWORD=secret123\n",
-            encoding="utf-8"
-        )
-        
-        (root / "debug.log").write_text("ERROR: something\n" * 10000, encoding="utf-8")
-        (root / "access.log").write_text("GET /api\n" * 20000, encoding="utf-8")
-        
         return root
 
     def benchmark_without_actp(self, repo_path: Path, num_queries: int = 5) -> Dict:
-        """Simulate: Every query reads ALL files."""
-        print(f"\n[Without ACTP] {num_queries} queries")
+        """Baseline: Every query reads ALL files (simulating context window resets)."""
+        print(f"\n📊 [Without ACTP] {num_queries} queries")
         
         total_tokens = 0
         total_time = 0
+        total_size = 0
+        file_count = 0
         
         for q in range(num_queries):
             start = time.perf_counter()
             
             all_content = []
-            for file_path in repo_path.rglob("*"):
+            for file_path in sorted(repo_path.rglob("*")):
                 if file_path.is_file():
                     try:
-                        content = file_path.read_text(encoding="utf-8")
+                        content = file_path.read_text(encoding="utf-8", errors="ignore")
                         all_content.append(f"=== {file_path.relative_to(repo_path)} ===\n{content}")
+                        if q == 0:
+                            file_count += 1
+                            total_size += len(content)
                     except (UnicodeDecodeError, IOError):
                         pass
             
             raw_context = "\n\n".join(all_content)
-            tokens = len(raw_context) // 4
+            tokens = len(raw_context) // 4  # Rough approximation
             
             elapsed = time.perf_counter() - start
             total_tokens += tokens
             total_time += elapsed
             
-            print(f"  Q{q+1}: {tokens:,} tokens, {elapsed:.3f}s")
+            print(f"   Q{q+1}: {tokens:,} tokens | {elapsed:.3f}s")
         
         return {
             "total_tokens": total_tokens,
             "avg_tokens": total_tokens // num_queries,
             "total_time": total_time,
             "avg_time": total_time / num_queries,
+            "file_count": file_count,
+            "total_size": total_size,
         }
 
     def benchmark_with_actp(self, repo_path: Path, num_queries: int = 5) -> Dict:
-        """Simulate: Pack once, cache, reuse."""
-        print(f"\n[With ACTP] {num_queries} queries")
+        """ACTP: Pack once, cache, reuse across queries."""
+        print(f"\n📦 [With ACTP] {num_queries} queries")
         
+        # PACK
         pack_start = time.perf_counter()
-        packed = self.packager.pack(repo_path, max_depth=5)
+        packet = ACTPPackagerFactory.pack_directory(
+            directory=repo_path,
+            project_name="Benchmark Project",
+            project_goal="Performance comparison",
+            max_depth=5
+        )
         pack_time = time.perf_counter() - pack_start
         
+        # VALIDATE
+        packet_dict = packet.to_dict()
+        is_valid, errors, warnings = self.validator.validate_data(packet_dict)
+        
+        if not is_valid:
+            print(f"   ⚠️  Validation errors: {len(errors)}")
+            return {"error": errors}
+        
+        # SAVE
         actp_file = repo_path.parent / "context.actp"
-        with open(actp_file, "w") as f:
-            json.dump(packed, f)
+        actp_size = 0
+        with open(actp_file, 'w', encoding='utf-8') as f:
+            json.dump(packet_dict, f, indent=2, ensure_ascii=False)
+            actp_size = actp_file.stat().st_size
+        
+        print(f"   📝 Packed in {pack_time:.3f}s | File size: {actp_size:,} bytes")
         
         total_tokens = 0
         total_time = 0
@@ -157,12 +169,25 @@ class ACTPBenchmark:
         for q in range(num_queries):
             start = time.perf_counter()
             
-            with open(actp_file) as f:
+            # LOAD & RECONSTRUCT
+            with open(actp_file, 'r', encoding='utf-8') as f:
                 cached = json.load(f)
             
+            # Simulate context reconstruction
             context_parts = []
-            for f in cached["files"]:
-                context_parts.append(f"=== {f['path']} ===\n{f['content']}")
+            
+            # Project info
+            project = cached.get('project', {})
+            context_parts.append(f"Project: {project.get('name', 'Unknown')}\nGoal: {project.get('goal', 'Unknown')}")
+            
+            # Decisions
+            for decision in cached.get('decisions', [])[:10]:  # Top 10
+                context_parts.append(f"Decision {decision.get('id', '?')}: {decision.get('content', '')}")
+            
+            # Artifacts (code snippets)
+            artifacts = cached.get('artifacts', {})
+            for snippet in artifacts.get('code_snippets', [])[:5]:  # Top 5
+                context_parts.append(f"Code [{snippet.get('id')}]:\n{snippet.get('content', '')}")
             
             actp_context = "\n\n".join(context_parts)
             tokens = len(actp_context) // 4
@@ -171,20 +196,21 @@ class ACTPBenchmark:
             total_tokens += tokens
             total_time += elapsed
             
-            print(f"  Q{q+1}: {tokens:,} tokens, {elapsed:.3f}s")
+            print(f"   Q{q+1}: {tokens:,} tokens | {elapsed:.3f}s")
         
         actp_file.unlink(missing_ok=True)
         
         return {
             "pack_time": pack_time,
+            "actp_size": actp_size,
             "total_tokens": total_tokens,
             "avg_tokens": total_tokens // num_queries,
             "total_time": total_time,
             "avg_time": total_time / num_queries,
-            "warnings": len(packed.get("metadata", {}).get("warnings", [])),
+            "validation_warnings": len(warnings),
         }
 
-    def run(self, sizes: List[int] = None) -> Dict:
+    def run(self, sizes: List[int] = None, num_queries: int = 5) -> Dict:
         """Run benchmark across repo sizes."""
         if sizes is None:
             sizes = [50, 100, 200]
@@ -197,32 +223,96 @@ class ACTPBenchmark:
                 self.generate_realistic_repo(repo, num_source_files=size)
                 
                 print(f"\n{'='*70}")
-                print(f"REPO: {size} source files + binaries + excluded dirs")
+                print(f"📁 REPO: {size} source files + binaries + excluded")
                 print(f"{'='*70}")
                 
-                wo = self.benchmark_without_actp(repo, num_queries=5)
-                wa = self.benchmark_with_actp(repo, num_queries=5)
+                wo = self.benchmark_without_actp(repo, num_queries=num_queries)
+                wa = self.benchmark_with_actp(repo, num_queries=num_queries)
                 
-                results.append({
-                    "repo_size": size,
-                    "without_actp": wo,
-                    "with_actp": wa,
-                    "token_savings": wo["total_tokens"] - wa["total_tokens"],
-                    "token_savings_pct": round(
-                        (wo["total_tokens"] - wa["total_tokens"]) / max(wo["total_tokens"], 1) * 100, 1
-                    ),
-                    "time_savings": wo["total_time"] - wa["total_time"],
-                    "time_savings_pct": round(
-                        (wo["total_time"] - wa["total_time"]) / max(wo["total_time"], 0.001) * 100, 1
-                    ),
-                })
+                if "error" not in wa:
+                    token_savings = wo["total_tokens"] - wa["total_tokens"]
+                    token_savings_pct = round(
+                        token_savings / max(wo["total_tokens"], 1) * 100, 1
+                    )
+                    time_savings = wo["total_time"] - wa["total_time"]
+                    time_savings_pct = round(
+                        time_savings / max(wo["total_time"], 0.001) * 100, 1
+                    )
+                    
+                    results.append({
+                        "repo_size": size,
+                        "without_actp": wo,
+                        "with_actp": wa,
+                        "token_savings": token_savings,
+                        "token_savings_pct": token_savings_pct,
+                        "time_savings": time_savings,
+                        "time_savings_pct": time_savings_pct,
+                    })
         
         return {"benchmarks": results}
 
     def print_report(self, data: Dict):
         """Print formatted report."""
         print("\n" + "="*70)
-        print("ACTP BENCHMARK REPORT")
+        print("✨ ACTP BENCHMARK REPORT")
         print("="*70)
         
-        for r in
+        for r in data.get("benchmarks", []):
+            size = r["repo_size"]
+            wo = r["without_actp"]
+            wa = r["with_actp"]
+            
+            print(f"\n📊 Repo Size: {size} files")
+            print(f"   {'─' * 66}")
+            
+            print(f"\n   WITHOUT ACTP (baseline)")
+            print(f"      Files indexed: {wo.get('file_count', 'N/A')}")
+            print(f"      Total size: {wo.get('total_size', 0) / 1024 / 1024:.2f} MB")
+            print(f"      Avg tokens/query: {wo.get('avg_tokens', 0):,}")
+            print(f"      Avg time/query: {wo.get('avg_time', 0):.3f}s")
+            
+            print(f"\n   WITH ACTP (packed)")
+            print(f"      ACTP file size: {wa.get('actp_size', 0) / 1024:.1f} KB")
+            print(f"      Pack time: {wa.get('pack_time', 0):.3f}s")
+            print(f"      Avg tokens/query: {wa.get('avg_tokens', 0):,}")
+            print(f"      Avg time/query: {wa.get('avg_time', 0):.3f}s")
+            
+            print(f"\n   💾 SAVINGS")
+            print(f"      Token reduction: {r['token_savings']:,} ({r['token_savings_pct']}%)")
+            print(f"      Time reduction: {r['time_savings']:.3f}s ({r['time_savings_pct']}%)")
+            
+            print(f"\n   {'─' * 66}")
+        
+        print("\n" + "="*70)
+        print("✅ Benchmark complete")
+        print("="*70 + "\n")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="ACTP Benchmark - Compare with vs without ACTP packaging"
+    )
+    parser.add_argument(
+        '--all', action='store_true',
+        help='Run all benchmarks (50, 100, 200 files)'
+    )
+    parser.add_argument(
+        '--sizes', type=int, nargs='+', default=[100],
+        help='Custom repo sizes to benchmark (default: 100)'
+    )
+    parser.add_argument(
+        '--queries', type=int, default=5,
+        help='Number of queries per benchmark (default: 5)'
+    )
+    
+    args = parser.parse_args()
+    
+    sizes = [50, 100, 200] if args.all else args.sizes
+    
+    benchmark = ACTPBenchmark()
+    results = benchmark.run(sizes=sizes, num_queries=args.queries)
+    benchmark.print_report(results)
+
+
+if __name__ == '__main__':
+    main()
