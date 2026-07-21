@@ -201,7 +201,13 @@ class ACTPPackager:
         return hashlib.sha256(vocab_json.encode('utf-8')).hexdigest()
     
     def build(self, created_by: Optional[str] = None, source_model: Optional[str] = None) -> ACTPPacket:
-        """Paketi oluştur"""
+        """
+        Paketi oluştur
+        
+        ✅ DEDUPLICATION FIX:
+        - files[] = single source of truth (full content)
+        - code_snippets[] = metadata-only references (no content duplication)
+        """
         now = datetime.now().isoformat()
         
         # Proje tanımlayıcısı
@@ -223,12 +229,13 @@ class ACTPPackager:
             tags=['actp', 'semantic', 'context']
         )
         
+        # ✂️ DEDUPLICATED: code_snippets now only reference files[], no content copy
         code_snippets = [
             CodeSnippet(
                 id=f"file-{index}",
                 lang=self._infer_language(file.path),
-                content=file.content,
-                summary=file.path
+                content=None,  # ← NO DUPLICATION: content stays in files[] only
+                summary=f"{file.path} ({file.size} bytes)"  # Brief reference
             )
             for index, file in enumerate(self.files, start=1)
             if file.type == 'code'
@@ -248,7 +255,7 @@ class ACTPPackager:
             symbol_legend=self.symbol_legend,
             source_model=source_model,
             tasks=self.tasks,
-            files=self.files,
+            files=self.files,  # ← Single source of truth
             artifacts=artifacts,
             open_questions=self.open_questions,
             next_steps=self.next_steps,
@@ -332,3 +339,59 @@ class ACTPPackagerFactory:
                         actp_file.path = str(relative_path)
         
         packager.save_to_file(output_file, created_by=created_by, source_model=source_model)
+
+
+class ACTPExtractor:
+    """
+    ACTP Extractor - Paket içeriğini dosya sistemine geri çıkar
+    Ters operasyon: unpack / extract
+    """
+    
+    def __init__(self, packet_data: Dict[str, Any]):
+        """Paket verisini yükle"""
+        self.packet_data = packet_data
+        self.files = packet_data.get('files', [])
+    
+    def extract_to_directory(self, output_dir: Path) -> int:
+        """
+        Dosyaları paket'ten çıkart
+        
+        Args:
+            output_dir: Hedef dizin
+        
+        Returns:
+            Çıkarılan dosya sayısı
+        """
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        extracted_count = 0
+        
+        for file_data in self.files:
+            if isinstance(file_data, dict):
+                path = file_data.get('path')
+                content = file_data.get('content')
+                
+                if path and content is not None:
+                    file_path = output_dir / path
+                    file_path.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    try:
+                        with open(file_path, 'w', encoding='utf-8') as f:
+                            f.write(content)
+                        extracted_count += 1
+                    except Exception as e:
+                        print(f"⚠️  Dosya yazılamadı {path}: {e}")
+        
+        return extracted_count
+    
+    @staticmethod
+    def extract_from_file(packet_file: Path, output_dir: Path) -> int:
+        """
+        JSON paket dosyasından çıkart
+        """
+        with open(packet_file, 'r', encoding='utf-8') as f:
+            packet_data = json.load(f)
+        
+        extractor = ACTPExtractor(packet_data)
+        return extractor.extract_to_directory(output_dir)
