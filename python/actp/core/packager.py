@@ -100,18 +100,17 @@ class ACTPPackager:
             # Binary dosya - placeholder
             file_type = 'binary'
             content = f"[Binary file: {file_path.name}]"
-            file_bytes = b''
         else:
             # Text/code dosya
             file_type = 'code' if file_path.suffix in ['.py', '.js', '.ts', '.go', '.rs', '.java'] else 'text'
             try:
                 with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                     content = f.read()
-                file_bytes = content.encode('utf-8')
             except Exception as e:
                 content = f"[Error reading file: {e}]"
-                file_bytes = b''
         
+        # Always compute checksum/size from the content that will actually be stored
+        file_bytes = content.encode('utf-8')
         checksum = self._calculate_checksum(file_bytes)
         size = len(file_bytes)
         
