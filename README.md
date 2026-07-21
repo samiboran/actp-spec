@@ -1,305 +1,32 @@
-# ACTP — AI Context Transfer Protocol
+# ACTP - AI Context Transfer Protocol
 
-> *"Don't explain your project again. Just transfer it."*
+Modeller arası taşınabilir **semantik bağlam** standardı. Claude'dan ChatGPT'ye, GPT'den başka bir modele — proje durumunu, kararları, açık soruları aktarın.
 
-An open standard for exporting, importing, and transferring AI project context across different language models — Claude, ChatGPT, Gemini, and beyond.
+## 🎯 Temel Fark
 
----
+**ACTP SADECİK dosya filtrelemesi DEĞİLDİR.**
 
-## The Problem
+- ❌ Diğer çözümler: "Binary dosyaları filtrele, cache'le, token kazan"
+- ✅ ACTP: "Kararları, semantik katmanı, sözlüğü yakala — proje anlayışını aktarabilmen için"
 
-Every time you switch AI models or start a new session, context is lost. Developers and AI power users waste significant time re-explaining projects, decisions, constraints, and current state.
+## 📦 ACTP Paketi İçerir
 
-There is no universal standard for AI-to-AI context transfer. ACTP is that standard.
+### 1. **Temel İçerik**
+- Kaynak dosyaları (filtrelenmiş)
+- Checksum'lar (bütünlük doğrulaması)
+- Metadata (kimlik, tarih, model bağlamı)
 
----
+### 2. ⭐ **Semantik Katman** (ACTP'nin Kalbi)
 
-## The Solution
-
-ACTP defines a portable `.actp.json` format that captures the full **semantic state** of an AI-assisted project — decisions made, current code state, open questions, symbolic priority markers — in a model-agnostic, human-readable way.
-
-Think of it as **Git for AI memory** — versioned, portable, owned by you.
-
----
-
-## Core Principles
-
-| Principle | Description |
-|---|---|
-| **Model-agnostic** | Works with Claude, ChatGPT, Gemini, or any future model |
-| **User-owned** | No cloud dependency. Your data lives where you put it |
-| **Semantic, not raw** | Captures decisions and state, not raw conversation transcripts |
-| **Dual-layer encoding** | Machine-readable structured fields + human-readable symbolic markers |
-| **Delta sync** | Only meaningful changes propagate — not full packet every time |
-
----
-
-## Format Spec (v0.1)
-
+#### Decisions (Kararlar)
 ```json
 {
-  "@context": "https://actp.dev/schema/v0.1",
-  "@type": "ACTPPacket",
-  "actp_version": "0.1",
-  "created_at": "ISO8601",
-  "vocabulary_hash": "actp-legend-v0.1",
-
-  "symbol_legend": {
-    "🔴": "priority=P0, mutability=LOCKED, certainty=HIGH",
-    "🟡": "priority=P1, mutability=FLEXIBLE, certainty=MEDIUM",
-    "🔵": "priority=P2, mutability=FLEXIBLE, certainty=LOW",
-    "🟢": "status=COMPLETED",
-    "🌫️": "certainty=LOW, hallucination_risk=true",
-    "🔗": "external_dependency=true"
-  },
-
-  "project": {
-    "name": "string",
-    "goal": "One sentence description of the project's purpose",
-    "constraints": ["🔴 immutable constraints — never change"],
-    "soft_preferences": ["🟡 flexible preferences"]
-  },
-
-  "decisions": [
-    {
-      "id": "D1",
-      "symbol": "🔴",
-      "priority": "P0",
-      "certainty": "HIGH",
-      "mutability": "LOCKED",
-      "content": "The decision made",
-      "rationale": "Why this decision was made"
-    }
-  ],
-
-  "tasks": [
-    {
-      "id": "T1",
-      "status": "done | pending | blocked",
-      "description": "string"
-    }
-  ],
-
-  "artifacts": {
-    "code_snippets": [
-      { "id": "C1", "lang": "string", "content": "string" }
-    ],
-    "references": ["url or filename"],
-    "code_graph_ref": {
-      "tool": "graphify",
-      "graph_path": "graph.json",
-      "graph_hash": "sha256 of the graph file",
-      "generated_at": "ISO8601",
-      "node_count": 320
-    }
-  },
-
-  "entity_map": {
-    "ComponentName": "canonical identifier to prevent naming drift"
-  },
-
-  "priority_matrix": [
-    { "segment": "decisions", "weight": 1.0 },
-    { "segment": "tasks", "weight": 0.8 }
-  ],
-
-  "open_questions": ["string"],
-
-  "next_steps": ["string"],
-
-  "integrity_hash": "sha256 of content fields"
+  "id": "db-choice",
+  "title": "PostgreSQL seçtik",
+  "description": "Veritabanı olarak PostgreSQL seçildi",
+  "context": "Reliability ve ACID işlemleri lazımdı",
+  "alternatives_considered": ["SQLite", "MongoDB", "MySQL"],
+  "rationale": "PostgreSQL transaction support ve reliability'den ötürü",
+  "date_made": "2026-07-15T10:00:00",
+  "impact": "Sistem daha güvenilir ve stabil hale geldi"
 }
-```
-
----
-
-## Symbolic Layer
-
-ACTP uses a two-layer encoding system inspired by human mnemonic techniques (Method of Loci, von Restorff Effect):
-
-**Layer 1 — Structured fields (machine-readable, primary)**
-```json
-"priority": "P0",
-"certainty": "HIGH",
-"mutability": "LOCKED"
-```
-
-**Layer 2 — Symbolic markers (human-readable, secondary)**
-```json
-"symbol": "🔴"
-```
-
-Symbols are not decorative. High-entropy tokens like 🔴 increase attention weight in transformer models (von Restorff Effect), effectively pre-weighting the associated content. Symbols are always backed by structured fields — never standalone.
-
-### Special Symbols
-
-| Symbol | Meaning |
-|---|---|
-| 🌫️ | Hallucination risk — AI generated this with low certainty, verify before trusting |
-| 🔗 | External dependency — relies on file, API, or doc not present in this packet |
-
----
-
-## Structural Memory (`code_graph_ref`)
-
-ACTP's `decisions` and `entity_map` fields capture **declarative memory** — what was decided and why. They don't capture **structural memory** — how the code is actually wired together (imports, call graphs, dependencies).
-
-`artifacts.code_graph_ref` is an optional pointer to a precomputed codebase graph (e.g. from [Graphify](https://github.com/Graphify-Labs/graphify)), so a packet can carry both kinds of memory without duplicating either:
-
-```json
-"code_graph_ref": {
-  "tool": "graphify",
-  "graph_path": "graph.json",
-  "graph_hash": "sha256...",
-  "generated_at": "ISO8601",
-  "node_count": 320
-}
-```
-
-Design rules:
-- **Reference only, never embedded.** The graph itself lives wherever the project keeps it (`graph_path`, relative to the project root). ACTP packets stay lightweight.
-- **`graph_hash` enables staleness detection.** `actp summary` recomputes the hash of the local graph file and flags the reference as `STALE` if it no longer matches — a receiving model should not trust a stale structural map.
-- **`node_count` is a usage hint, not a rule.** Graph tools like Graphify report diminishing returns below roughly 500 files; consumers can use this field to decide whether resolving the graph is worth it for a given project.
-- **Optional in every sense.** Projects without a code graph simply omit the field. Nothing else in the schema depends on it.
-
----
-
-ACTP defines two separate specs:
-
-- **ACTP** — Data layer. What is carried (packet format, schema, compression).
-- **ACTP-N** — Network layer. How packets move between nodes.
-
-### Node Types
-
-| Node | Role |
-|---|---|
-| **Local Node** | Creates and consumes packets (Claude, ChatGPT, Gemini instances) |
-| **Relay Node** | MCP-based transport — filters and forwards deltas |
-| **Snapshot Node** | Compressed stable state — rehydration checkpoint |
-| **Refutation Node ⚔️** | Detects conflicts, prevents split-brain context drift |
-
-### Sync Model
-
-Sync is **event-driven**, not continuous. Triggers:
-- Session end
-- Major decision made
-- Manual export
-- Scheduled snapshot
-
-Only **deltas propagate** — not the full packet every time.
-
-### Propagation Rules
-
-**Propagate:**
-- Apex/goal changes
-- 🔴 tag updates
-- New artifacts
-- Task state transitions
-- Conflict introduction
-
-**Suppress:**
-- Minor wording changes
-- Redundant summaries
-- P2 updates (unless explicitly flagged)
-- TTL-expired packets
-
-### Conflict Resolution
-
-Inspired by Git branching:
-
-1. Conflicting decisions → **branch-both** (preserve both versions)
-2. **Vector clocks** track causal ordering
-3. P0 tie → **human-in-the-loop required** — no silent auto-merge ever
-4. Un-rehydratable packets → **quarantined as dead letter context**, not discarded
-
----
-
-## MCP Integration
-
-ACTP is designed to work alongside [Model Context Protocol (MCP)](https://modelcontextprotocol.io):
-
-```
-MCP  = transport layer  →  which road to take
-ACTP = payload layer    →  what to carry
-```
-
-ACTP-N nodes can be implemented as MCP extensions, leveraging the existing MCP ecosystem for transport while adding the ACTP context payload standard on top.
-
----
-
-## How to Use
-
-### Manual (current)
-1. At session end, generate an ACTP packet summarizing your project state
-2. Save it locally or in your own database
-3. At the start of a new session (with any model), paste the packet
-4. The model reconstructs context instantly — no re-explaining
-
-### Automated (roadmap)
-- CLI tool: converts chat export → ACTP packet automatically
-- Compressor Agent: aggregates multiple packets into a single snapshot
-- Relay Node: auto-syncs between AI tools via MCP
-
----
-
-## Roadmap
-
-| Status | Item |
-|---|---|
-| ✅ | Core concept validated |
-| ✅ | v0.1 schema draft |
-| ✅ | Symbolic encoding layer |
-| ✅ | Node architecture spec (ACTP-N) |
-| 🔄 | CLI: chat export → ACTP packet |
-| ✅ | BENCH-001: Format vs constraint-following (3 models × 3 formats) |
-| ✅ | BENCH-002: Anti-pattern lists fix model violations (3 models × 4 formats) |
-| ⬜ | Compressor Agent (SaaS) |
-| ⬜ | Maestro — multi-model orchestrator |
-| ⬜ | actp.dev spec site |
-
-## Benchmarks
-
-ACTP constraint-following has been tested across Claude, ChatGPT, and Gemini.
-
-### BENCH-001 — Format vs Constraint Following
-**Constraint:** Model-agnostic, no provider SDK  
-**Result:** Claude ✅ ChatGPT ✅ Gemini ❌ (all 3 formats)  
-**Finding:** Gemini hardcoded OpenAI response shape regardless of format. Format alone cannot guarantee constraint following.
-
-### BENCH-002 — Explicit Anti-Pattern Lists
-**Constraint:** Same + explicit forbidden patterns with provider attribution  
-**Result:** Claude ✅ ChatGPT ✅ Gemini ✅ (all 4 formats)  
-**Finding:** Explicit anti-patterns fixed Gemini: 0/4 → 4/4. Constraint quality determines compliance, not format. Gemini internalized ACTP as native protocol — generating `actp_request`, `actp_payload`, `X-ACTP-Version` headers spontaneously.
-
-> Full benchmark data: [`benchmarks/BENCH-002.md`](benchmarks/BENCH-002.md)
----
-
-## Business Model
-
-ACTP follows the **Git + GitHub model**:
-
-| Layer | Price | Audience |
-|---|---|---|
-| Schema + CLI | Free / Open source | Developers |
-| Compressor SaaS | ~$10–20/mo | AI power users |
-| Enterprise | ~$100–500/mo | Companies with multi-model workflows |
-
-The protocol is open. The tooling is where value is captured.
-
----
-
-## Status
-
-🚧 Early draft — open for discussion and contribution.
-
-This spec was developed collaboratively across Claude, ChatGPT, and Gemini sessions — itself a live proof of concept for ACTP.
-
-## Contributing
-
-Open an issue or PR. This is meant to become a community standard.
-
----
-
-## About
-
-**ACTP** is designed to make AI model switching as seamless as switching between apps. Your context belongs to you — not to any single model or platform.
