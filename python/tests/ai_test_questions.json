@@ -1,0 +1,465 @@
+{
+  "actp_ai_test_questions": {
+    "metadata": {
+      "version": "1.0",
+      "created_at": "2026-07-21T12:00:00Z",
+      "protocol": "ACTP v0.1",
+      "purpose": "Comprehensive AI testing for ACTP deduplikasyon, round-trip, validator, güvenlik",
+      "target_models": ["claude", "gpt-4", "gemini"],
+      "difficulty_levels": {
+        "basic": "Fonksiyonellik doğrulama",
+        "intermediate": "Integration ve edge cases",
+        "advanced": "Güvenlik, performans, deterministik davranış"
+      }
+    },
+    "test_suites": {
+      "deduplikasyon": {
+        "name": "✂️ Deduplikasyon Testleri",
+        "description": "Content tekrarı %95 → 0% olup olmadığını doğrula",
+        "questions": [
+          {
+            "id": "dedup_001",
+            "difficulty": "basic",
+            "question": "ACTP paketinde `files[]` ve `code_snippets[]` arasında veri tekrarı var mı? Nasıl tespit edebilirim?",
+            "context": {
+              "scenario": "10 Python dosyası paketlenmiş",
+              "files_count": 10,
+              "code_snippets_count": 10
+            },
+            "expected_answer": "files[]'de tam içerik, code_snippets[]'de content=null olmalı. Veri tekrarı sıfır olmalı.",
+            "test_assertion": "all(s.content is None for s in packet.artifacts.code_snippets)",
+            "test_metric": "snippets_size = 0 bytes"
+          },
+          {
+            "id": "dedup_002",
+            "difficulty": "intermediate",
+            "question": "Deduplikasyon uygulandığında paket boyutu ne kadar küçülüyor? JSON dump boyutunu ölç.",
+            "context": {
+              "scenario": "50 dosya x 100KB = 5MB veri",
+              "measure": "JSON serialized size"
+            },
+            "expected_answer": "Orijinal boyutun ~50% veya daha az (1-3MB)",
+            "test_assertion": "json_size < original_files_size * 1.5",
+            "test_metric": "compression_ratio = json_size / files_total_size"
+          },
+          {
+            "id": "dedup_003",
+            "difficulty": "advanced",
+            "question": "Mixed file türleri (py, txt, md, json) paketlenince deduplikasyon nasıl uygulanıyor? Hangi dosyalar `code_snippets[]`'e giriyor?",
+            "context": {
+              "files": ["main.py", "notes.txt", "README.md", "config.json"],
+              "expected_snippets": 1
+            },
+            "expected_answer": ".py dosyaları code_snippets[]'e girer, diğerleri files[]'de kalır. Sadece code files deduplicate edilir.",
+            "test_assertion": "len(code_snippets) == 1 and all(s.content is None for s in code_snippets)",
+            "test_metric": "code_files_ratio = 1/4 = 25%"
+          }
+        ]
+      },
+      "round_trip": {
+        "name": "🔄 Round-Trip (Pack-Unpack) Testleri",
+        "description": "Pack → Save → Unpack → Verify workflow",
+        "questions": [
+          {
+            "id": "round_001",
+            "difficulty": "basic",
+            "question": "Pack→Unpack döngüsünde dosya içeriği birebir korunuyor mu? 10 dosyayı kontrol et.",
+            "context": {
+              "files": {
+                "main.py": "def main(): print('Hello')",
+                "utils.py": "def helper(): return 42",
+                "README.md": "# My Project",
+                "config.json": "{\"version\": \"1.0\"}"
+              },
+              "count": 4
+            },
+            "expected_answer": "Tüm dosyalar aynı içerikle geri yüklenmeli. Checksum eşleşmeli.",
+            "test_assertion": "all(restored_content == original_content for file in files)",
+            "test_metric": "success_rate = 100%"
+          },
+          {
+            "id": "round_002",
+            "difficulty": "intermediate",
+            "question": "İç içe dizin yapısı (src/main/, src/utils/, tests/, docs/) restore ediliyor mu? Tüm yollar korunuyor mu?",
+            "context": {
+              "directories": [
+                "src/main/app.py",
+                "src/utils/helper.py",
+                "tests/test_app.py",
+                "docs/README.md"
+              ],
+              "depth": 4
+            },
+            "expected_answer": "Tüm dizin yapısı korunmalı. Nested paths tam olarak restore edilmeli.",
+            "test_assertion": "all((restore_dir / expected_path).exists() for expected_path in directories)",
+            "test_metric": "path_integrity = 100%"
+          },
+          {
+            "id": "round_003",
+            "difficulty": "advanced",
+            "question": "Checksum integriteşi round-trip sonrası korunuyor mu? Orijinal ve restore dosyalarının SHA-256'ları eşleşiyor mu?",
+            "context": {
+              "large_file": "10MB text file",
+              "checksum_algo": "SHA-256",
+              "test_count": 50
+            },
+            "expected_answer": "Her file için original_checksum == restored_checksum",
+            "test_assertion": "checksum1 == checksum2 for all files",
+            "test_metric": "checksum_match_rate = 100%"
+          },
+          {
+            "id": "round_004",
+            "difficulty": "advanced",
+            "question": "Unicode karakterler (🚀, 世界, ™, ∫) round-trip'te korunuyor mu?",
+            "context": {
+              "unicode_content": "def greet(name='世界'): return f'Hello {name}! 🚀'",
+              "special_chars": ["emoji", "CJK", "symbols", "math"]
+            },
+            "expected_answer": "Unicode tam olarak korunmalı. UTF-8 encoding preserve edilmeli.",
+            "test_assertion": "restored_unicode == original_unicode",
+            "test_metric": "unicode_preservation = 100%"
+          }
+        ]
+      },
+      "validator": {
+        "name": "✅ Validator Testleri",
+        "description": "Schema, enum, checksum, vocabulary_hash doğrulama",
+        "questions": [
+          {
+            "id": "val_001",
+            "difficulty": "basic",
+            "question": "Validator geçersiz decision priority'yi yakalar mı? 'MEGA_CRITICAL' gibi invalid enum.",
+            "context": {
+              "invalid_priority": "MEGA_CRITICAL",
+              "valid_priorities": ["P0", "P1", "P2"]
+            },
+            "expected_answer": "Validator reject etmeli, error mesajı dönmeli.",
+            "test_assertion": "is_valid is False and 'priority' in errors",
+            "test_metric": "validation_accuracy = 100%"
+          },
+          {
+            "id": "val_002",
+            "difficulty": "intermediate",
+            "question": "Checksum uyuşmazlığı tespit ediliyor mu? Content değiştirilip checksum eski kalırsa?",
+            "context": {
+              "original_content": "original",
+              "modified_content": "MODIFIED",
+              "checksum": "original'in SHA-256"
+            },
+            "expected_answer": "Validator checksum mismatch'i tespit etmeli.",
+            "test_assertion": "is_valid is False and 'checksum' in errors",
+            "test_metric": "tampering_detection = 100%"
+          },
+          {
+            "id": "val_003",
+            "difficulty": "intermediate",
+            "question": "Vocabulary hash uyuşmazlığı tespit ediliyor mu? Symbol legend değiştirilirse?",
+            "context": {
+              "symbol_legend": {"🔴": "Critical"},
+              "vocabulary_hash": "actual_hash_of_legend"
+            },
+            "expected_answer": "Validator hash mismatch'i tespit etmeli.",
+            "test_assertion": "is_valid is False and 'vocabulary_hash' in errors",
+            "test_metric": "semantic_integrity = 100%"
+          },
+          {
+            "id": "val_004",
+            "difficulty": "advanced",
+            "question": "Bozuk paket reddediliyor mu? files string ise, checksum null ise?",
+            "context": {
+              "corruptions": [
+                "files = 'string' (array yerine)",
+                "checksum = null",
+                "checksum = ''",
+                "files = None"
+              ]
+            },
+            "expected_answer": "Tüm bozuk paketler reject edilmeli.",
+            "test_assertion": "is_valid is False for all corruptions",
+            "test_metric": "corruption_detection = 100%"
+          }
+        ]
+      },
+      "security": {
+        "name": "🔒 Güvenlik Testleri",
+        "description": "Path traversal, malicious payloads, input validation",
+        "questions": [
+          {
+            "id": "sec_001",
+            "difficulty": "intermediate",
+            "question": "Path traversal saldırıları bloke ediliyor mu? '../../etc/passwd' paketlenirse?",
+            "context": {
+              "attack_payloads": [
+                "../../etc/passwd",
+                "..\\..\\windows\\system32",
+                "/etc/passwd",
+                "C:\\Windows\\System32\\config"
+              ]
+            },
+            "expected_answer": "Validator bu zararlı path'leri reject etmeli.",
+            "test_assertion": "is_valid is False for all traversal paths",
+            "test_metric": "security_score = 100%"
+          },
+          {
+            "id": "sec_002",
+            "difficulty": "advanced",
+            "question": "Large-scale payloads (1000+ dosya) performans DoS'a karşı korunuyor mu?",
+            "context": {
+              "payload_scale": "1000 files x 1MB each",
+              "timeout": "< 5 seconds",
+              "memory_limit": "< 500MB"
+            },
+            "expected_answer": "Pack hızlı tamamlanmalı, memory leak yokmalı.",
+            "test_assertion": "elapsed < 5.0 and memory_usage < 500MB",
+            "test_metric": "dos_resilience = acceptable"
+          }
+        ]
+      },
+      "deterministic": {
+        "name": "🔄 Deterministik Davranış Testleri",
+        "description": "Aynı giriş → aynı çıktı doğrulaması",
+        "questions": [
+          {
+            "id": "deter_001",
+            "difficulty": "intermediate",
+            "question": "Aynı dosya iki kez paketlenince checksum aynı mı?",
+            "context": {
+              "test_count": 2,
+              "file": "code.py with content 'def func(): pass'"
+            },
+            "expected_answer": "checksum1 == checksum2",
+            "test_assertion": "packet1.files[0].checksum == packet2.files[0].checksum",
+            "test_metric": "determinism = 100%"
+          },
+          {
+            "id": "deter_002",
+            "difficulty": "advanced",
+            "question": "JSON serialization deterministic mi? İki to_dict() çağrısının SHA-256'ları eşleşiyor mu?",
+            "context": {
+              "calls": 2,
+              "hash_algo": "SHA-256",
+              "serialization": "json.dumps(sort_keys=True)"
+            },
+            "expected_answer": "hash1 == hash2 (tam bit-for-bit eşit olmalı)",
+            "test_assertion": "hashlib.sha256(json1.encode()) == hashlib.sha256(json2.encode())",
+            "test_metric": "json_determinism = 100%"
+          }
+        ]
+      },
+      "performance": {
+        "name": "⚡ Performans Testleri",
+        "description": "Ölçeklenebilirlik ve hız testleri",
+        "questions": [
+          {
+            "id": "perf_001",
+            "difficulty": "basic",
+            "question": "50 dosya paketleme kaç saniyede tamamlanıyor?",
+            "context": {
+              "file_count": 50,
+              "file_size": "1KB each",
+              "target_time": "< 1 second"
+            },
+            "expected_answer": "elapsed < 1.0 saniye",
+            "test_assertion": "elapsed < 1.0",
+            "test_metric": "throughput = 50+ files/sec"
+          },
+          {
+            "id": "perf_002",
+            "difficulty": "intermediate",
+            "question": "500 dosya ve 1000 decision paketleniyor mu?",
+            "context": {
+              "scale": "500 files + 1000 decisions + 500 symbols",
+              "target_time": "< 10 seconds"
+            },
+            "expected_answer": "Tüm ölçekler başarıyla paketlenmeli.",
+            "test_assertion": "len(packet.files) == 500 and len(packet.decisions) == 1000",
+            "test_metric": "scalability = passed"
+          }
+        ]
+      },
+      "edge_cases": {
+        "name": "🔍 Edge Case Testleri",
+        "description": "Sınır durumlar ve özel durumlar",
+        "questions": [
+          {
+            "id": "edge_001",
+            "difficulty": "basic",
+            "question": "Boş proje paketlenebiliyor mu?",
+            "context": {
+              "files": 0,
+              "decisions": 0
+            },
+            "expected_answer": "Boş paket oluşturulmalı, error yok.",
+            "test_assertion": "len(packet.files) == 0 and packet is not None",
+            "test_metric": "empty_handling = ok"
+          },
+          {
+            "id": "edge_002",
+            "difficulty": "intermediate",
+            "question": "Geçersiz UTF-8 dosyası (b'\\xff\\xfe\\xfa') paketlenince ne oluyor?",
+            "context": {
+              "file_type": "binary/corrupted",
+              "handling": "error or skip"
+            },
+            "expected_answer": "Hata veya skip edilmeli, crash yok.",
+            "test_assertion": "exception caught or file skipped",
+            "test_metric": "error_resilience = ok"
+          },
+          {
+            "id": "edge_003",
+            "difficulty": "advanced",
+            "question": "10MB single file paketlenebiliyor mu? Memory leak var mı?",
+            "context": {
+              "file_size": "10MB",
+              "memory_limit": "< 100MB"
+            },
+            "expected_answer": "Paketlenebilmeli, memory efficient olmalı.",
+            "test_assertion": "packet.files[0].size > 10*1024*1024",
+            "test_metric": "memory_efficiency = passed"
+          }
+        ]
+      },
+      "integration": {
+        "name": "🎯 Integration Testleri",
+        "description": "Gerçek dünya senaryoları",
+        "questions": [
+          {
+            "id": "int_001",
+            "difficulty": "intermediate",
+            "question": "Gerçek Python projesi (src/, tests/, docs/) başarıyla paketlenip restore ediliyor mu?",
+            "context": {
+              "structure": "Typical Python project layout",
+              "files": 7,
+              "decisions": 1,
+              "symbols": 1
+            },
+            "expected_answer": "Pack→Unpack→Verify workflow 100% başarılı olmalı.",
+            "test_assertion": "all assertions passed",
+            "test_metric": "integration_success = 100%"
+          },
+          {
+            "id": "int_002",
+            "difficulty": "advanced",
+            "question": "Cross-model context transfer (Claude context → GPT'ye gönderme). Tüm data intact mi?",
+            "context": {
+              "source_model": "claude",
+              "target_model": "gpt-4",
+              "transfer_medium": "ACTP JSON file"
+            },
+            "expected_answer": "Tüm metadata, decisions, files intact kalmalı.",
+            "test_assertion": "all data fields present and valid",
+            "test_metric": "transfer_integrity = 100%"
+          }
+        ]
+      },
+      "concurrent": {
+        "name": "🔀 Concurrent/Thread Safety Testleri",
+        "description": "Multi-threaded packing operations",
+        "questions": [
+          {
+            "id": "conc_001",
+            "difficulty": "advanced",
+            "question": "20 thread'le concurrent pack yapılabilir mi? Race condition var mı?",
+            "context": {
+              "thread_count": 20,
+              "operations": "concurrent packing",
+              "error_tolerance": 0
+            },
+            "expected_answer": "Tüm thread'ler başarılı olmalı, 0 error.",
+            "test_assertion": "len(errors) == 0 and len(results) == 20",
+            "test_metric": "thread_safety = passed"
+          }
+        ]
+      }
+    },
+    "evaluation_rubric": {
+      "correctness": {
+        "weight": 40,
+        "criteria": [
+          "Test assertion'lar geçiyor mu?",
+          "Expected metric'ler sağlanıyor mu?",
+          "Edge case'ler handle ediliyor mu?"
+        ]
+      },
+      "performance": {
+        "weight": 20,
+        "criteria": [
+          "Zaman limitleri karşılanıyor mu?",
+          "Memory efficient mi?",
+          "Ölçeklenebilir mi?"
+        ]
+      },
+      "security": {
+        "weight": 20,
+        "criteria": [
+          "Path traversal bloke edildi mi?",
+          "Malicious payloads reddedildi mi?",
+          "DoS'a karşı korunmuş mu?"
+        ]
+      },
+      "determinism": {
+        "weight": 15,
+        "criteria": [
+          "Aynı input → aynı output mu?",
+          "JSON deterministic mi?",
+          "Checksum stabil mi?"
+        ]
+      },
+      "reliability": {
+        "weight": 5,
+        "criteria": [
+          "Hata handling iyi mi?",
+          "Unicode support var mı?",
+          "Corrupted packet handling?"
+        ]
+      }
+    },
+    "test_execution_results": {
+      "timestamp": "2026-07-21T12:00:00Z",
+      "total_questions": 28,
+      "by_difficulty": {
+        "basic": 6,
+        "intermediate": 12,
+        "advanced": 10
+      },
+      "by_category": {
+        "deduplikasyon": 3,
+        "round_trip": 4,
+        "validator": 4,
+        "security": 2,
+        "deterministic": 2,
+        "performance": 2,
+        "edge_cases": 3,
+        "integration": 2,
+        "concurrent": 1
+      },
+      "expected_metrics": {
+        "coverage": "85-90%",
+        "pass_rate": "95%+",
+        "performance_score": "acceptable",
+        "security_score": "95%+"
+      }
+    },
+    "ai_prompts": {
+      "claude": {
+        "system_prompt": "You are an ACTP (Agent Context Transfer Protocol) expert. Review the test suite and validate the implementation. Focus on deduplikasyon, round-trip integrity, and validator correctness.",
+        "task": "Execute the test suite mentally and identify any failures or edge cases not covered."
+      },
+      "gpt4": {
+        "system_prompt": "You are a security architect. Review ACTP tests for security vulnerabilities, path traversal, and DoS resilience.",
+        "task": "Perform security audit of the test suite and identify gaps."
+      },
+      "gemini": {
+        "system_prompt": "You are a performance engineer. Review ACTP tests for scalability and deterministic behavior.",
+        "task": "Analyze performance benchmarks and identify optimization opportunities."
+      }
+    },
+    "next_steps": [
+      "Run pytest on test_comprehensive.py and test_advanced_security.py",
+      "Fix the 2 failing tests (binary detection, nested paths)",
+      "Run full test suite with coverage report",
+      "Submit to Claude/GPT-4/Gemini for cross-model validation",
+      "Generate coverage report and compare with 85-90% target"
+    ]
+  }
+}
