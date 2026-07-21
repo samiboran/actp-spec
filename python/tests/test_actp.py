@@ -482,13 +482,6 @@ class TestExtractor:
             
             # Extract'ı test et
             with tempfile.TemporaryDirectory() as extract_dir:
-                extracted = ACTPExtractor.extract_from_file(
-                    packet_file=Path(tmpdir_path) / "dummy.actp",  # dummy path
-                    output_dir=Path(extract_dir)
-                )
-                
-                # Not: extract_from_file packet_file'dan okuyor, dummy kullandık
-                # Bunun yerine direct ACTPExtractor kullanacağız
                 extractor = ACTPExtractor(packet_dict)
                 extracted_count = extractor.extract_to_directory(Path(extract_dir))
                 

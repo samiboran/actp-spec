@@ -373,7 +373,13 @@ class ACTPExtractor:
                 content = file_data.get('content')
                 
                 if path and content is not None:
-                    file_path = output_dir / path
+                    # Absolute paths are stored as-is by add_file(); make them
+                    # relative so they land inside output_dir, not at the
+                    # original location on disk.
+                    rel = Path(path)
+                    if rel.is_absolute():
+                        rel = Path(rel.name)
+                    file_path = output_dir / rel
                     file_path.parent.mkdir(parents=True, exist_ok=True)
                     
                     try:
