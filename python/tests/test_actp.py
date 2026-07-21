@@ -462,7 +462,77 @@ class TestPackagerFactory:
 
 class TestExtractor:
     """🔓 ACTPExtractor testleri"""
-    
+
+    def _base_packet(self) -> dict:
+        """Minimal geçerli paket şablonu"""
+        return {
+            "@context": "https://actp.dev/schema/v0.1",
+            "@type": "ACTPPacket",
+            "actp_version": "0.1",
+            "created_at": "2026-01-01T00:00:00",
+            "vocabulary_hash": hashlib.sha256(b"{}").hexdigest(),
+            "symbol_legend": {},
+            "project": {"name": "T", "goal": "T"},
+            "decisions": [],
+            "files": [],
+        }
+
+    def test_extract_rejects_path_traversal(self):
+        """Security: ../escape yolu çıkarma sırasında reddedilir"""
+        with tempfile.TemporaryDirectory() as parent_dir:
+            parent_path = Path(parent_dir)
+            output_dir = parent_path / "output"
+            output_dir.mkdir()
+
+            packet_dict = self._base_packet()
+            packet_dict["files"] = [
+                {
+                    "path": "../../escape.txt",
+                    "content": "evil content",
+                    "size": 12,
+                    "type": "text",
+                    "checksum": hashlib.sha256(b"evil content").hexdigest(),
+                }
+            ]
+
+            extractor = ACTPExtractor(packet_dict)
+            count = extractor.extract_to_directory(output_dir)
+
+            # Hiçbir dosya çıkarılmamalı
+            assert count == 0
+            # Saldırı hedefi dışarıda OLMAMALI
+            evil_file = parent_path / "escape.txt"
+            assert not evil_file.exists(), "Path traversal saldırısı başarılı — güvenlik açığı!"
+
+    def test_extract_rejects_absolute_path(self):
+        """Security: Mutlak yol çıkarma sırasında reddedilir"""
+        with tempfile.TemporaryDirectory() as parent_dir:
+            parent_path = Path(parent_dir)
+            output_dir = parent_path / "output"
+            output_dir.mkdir()
+
+            # Geçici bir hedef dosya (çıkarılmamalı)
+            target_file = parent_path / "absolute_target.txt"
+
+            packet_dict = self._base_packet()
+            packet_dict["files"] = [
+                {
+                    "path": str(target_file),  # Mutlak yol!
+                    "content": "evil content",
+                    "size": 12,
+                    "type": "text",
+                    "checksum": hashlib.sha256(b"evil content").hexdigest(),
+                }
+            ]
+
+            extractor = ACTPExtractor(packet_dict)
+            count = extractor.extract_to_directory(output_dir)
+
+            # Hiçbir dosya çıkarılmamalı
+            assert count == 0
+            # Mutlak yol hedefi oluşturulmamalı
+            assert not target_file.exists(), "Mutlak yol saldırısı başarılı — güvenlik açığı!"
+
     def test_extract_creates_files(self):
         """Extractor dosyaları yaratır"""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -596,5 +666,96 @@ class TestIntegration:
                     assert restored_config == '{"debug": false}'
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+class TestGitDiffDecisions:
+    """🔀 add_decisions_from_git_diff testleri"""
+
+    SAMPLE_DIFF = """\
+diff --git a/src/auth.py b/src/auth.py
+index 000000..111111 100644
+--- a/src/auth.py
++++ b/src/auth.py
+@@ -1,3 +1,55 @@
+-def old():
+-    pass
++def new():
++    # many lines
+""" + "\n".join([f"+    line_{i} = {i}" for i in range(50)]) + """
+diff --git a/README.md b/README.md
+index 000000..222222 100644
+--- a/README.md
++++ b/README.md
+@@ -1,2 +1,3 @@
++# Updated
+ # Old
+ docs
+diff --git a/removed.txt b/removed.txt
+index 333333..000000 100644
+--- a/removed.txt
++++ /dev/null
+@@ -1,2 +0,0 @@
+-old content
+-line2
+diff --git a/new_feature.py b/new_feature.py
+new file mode 100644
+index 000000..444444
+--- /dev/null
++++ b/new_feature.py
+@@ -0,0 +1,5 @@
++def feature():
++    pass
+"""
+
+    def test_diff_creates_decisions(self):
+        """Diff'ten karar üretilir"""
+        packager = ACTPPackager("Diff Test", "Git diff decisions")
+        decisions = packager.add_decisions_from_git_diff(self.SAMPLE_DIFF)
+        assert len(decisions) >= 1
+        assert all(d.rationale == "Auto-extracted from git diff" for d in decisions)
+
+    def test_diff_detects_new_file(self):
+        """Yeni dosya ADD kararı üretir"""
+        packager = ACTPPackager("New File Test", "new file")
+        decisions = packager.add_decisions_from_git_diff(self.SAMPLE_DIFF)
+        contents = [d.content for d in decisions]
+        assert any("new_feature.py" in c and "New file" in c for c in contents)
+
+    def test_diff_detects_deleted_file(self):
+        """Silinen dosya REMOVE kararı üretir"""
+        packager = ACTPPackager("Delete Test", "deleted file")
+        decisions = packager.add_decisions_from_git_diff(self.SAMPLE_DIFF)
+        contents = [d.content for d in decisions]
+        assert any("removed.txt" in c and "removed" in c.lower() for c in contents)
+
+    def test_diff_assigns_p0_for_large_changes(self):
+        """50+ satır değişikliği P0 önceliği alır"""
+        packager = ACTPPackager("Large Change Test", "large diff")
+        decisions = packager.add_decisions_from_git_diff(self.SAMPLE_DIFF)
+        p0_decisions = [d for d in decisions if d.priority == "P0"]
+        # src/auth.py 50+ satır değişti → P0 olmalı
+        assert len(p0_decisions) >= 1
+
+    def test_diff_id_prefix(self):
+        """Özel ID ön eki kullanılabilir"""
+        packager = ACTPPackager("Prefix Test", "prefix")
+        decisions = packager.add_decisions_from_git_diff(
+            self.SAMPLE_DIFF, id_prefix="CHANGE"
+        )
+        assert all(d.id.startswith("CHANGE") for d in decisions)
+
+    def test_diff_appends_to_existing_decisions(self):
+        """Mevcut kararların ardına eklenir"""
+        packager = ACTPPackager("Append Test", "append")
+        packager.add_decision("D1", "P0", "HIGH", "LOCKED", "Manual decision")
+        packager.add_decisions_from_git_diff(self.SAMPLE_DIFF)
+        # D1 korunmalı, yeni kararlar eklenmeli
+        assert packager.decisions[0].id == "D1"
+        assert packager.decisions[0].content == "Manual decision"
+        assert len(packager.decisions) > 1
+
+    def test_empty_diff_returns_empty_list(self):
+        """Boş diff boş liste döndürür"""
+        packager = ACTPPackager("Empty Diff", "empty")
+        decisions = packager.add_decisions_from_git_diff("")
+        assert decisions == []
+
+

@@ -191,14 +191,127 @@ class ACTPPackager:
         """Öncelik matrisi elemanı ekle"""
         if 0.0 <= weight <= 1.0:
             self.priority_matrix.append(PriorityMatrixItem(segment=segment, weight=weight))
-    
+
+    def add_decisions_from_git_diff(
+        self,
+        diff_text: str,
+        source_model: Optional[str] = None,
+        id_prefix: str = "D"
+    ) -> List[Decision]:
+        """
+        Git diff metninden otomatik karar çıkar.
+
+        Her değiştirilen dosya için bir Decision üretir; ekleme/silme/değiştirme
+        durumuna göre öncelik ve mutability atanır.
+
+        Args:
+            diff_text:    `git diff` veya `git show` komutunun ham çıktısı.
+            source_model: Kararı üreten modelin adı (isteğe bağlı).
+            id_prefix:    Karar ID'leri için ön ek (varsayılan: "D").
+
+        Returns:
+            Pakete eklenen Decision nesnelerinin listesi.
+        """
+        import re
+
+        added: List[Decision] = []
+
+        # Başlangıç indeksi: mevcut karar sayısından devam et
+        start_index = len(self.decisions) + 1
+
+        # Her "diff --git a/... b/..." bloğunu bul
+        file_headers = re.findall(
+            r'^diff --git a/(.+?) b/(.+?)$',
+            diff_text,
+            re.MULTILINE,
+        )
+
+        # Bir dosya için toplam eklenen/silinen satır sayısını hesapla
+        # Blokları ayır: her "diff --git" satırından bir sonrakine kadar
+        blocks = re.split(r'(?=^diff --git )', diff_text, flags=re.MULTILINE)
+
+        file_stats: Dict[str, Dict[str, int]] = {}
+        for block in blocks:
+            header = re.search(r'^diff --git a/(.+?) b/(.+?)$', block, re.MULTILINE)
+            if not header:
+                continue
+            path_b = header.group(2)
+            additions = len(re.findall(r'^\+(?!\+\+)', block, re.MULTILINE))
+            deletions = len(re.findall(r'^-(?!--)', block, re.MULTILINE))
+            is_new = bool(re.search(r'^--- /dev/null', block, re.MULTILINE))
+            is_deleted = bool(re.search(r'^\+\+\+ /dev/null', block, re.MULTILINE))
+            file_stats[path_b] = {
+                "additions": additions,
+                "deletions": deletions,
+                "is_new": int(is_new),
+                "is_deleted": int(is_deleted),
+            }
+
+        seen_paths = set()
+        for i, (path_a, path_b) in enumerate(file_headers):
+            if path_b in seen_paths:
+                continue
+            seen_paths.add(path_b)
+
+            stats = file_stats.get(path_b, {})
+            additions = stats.get("additions", 0)
+            deletions = stats.get("deletions", 0)
+            is_new = bool(stats.get("is_new", 0))
+            is_deleted = bool(stats.get("is_deleted", 0))
+
+            # Değişiklik türüne göre içerik ve öncelik belirle
+            if is_new:
+                content = f"New file added: {path_b} (+{additions} lines)"
+                priority = "P1"
+                mutability = "FLEXIBLE"
+                certainty = "HIGH"
+            elif is_deleted:
+                content = f"File removed: {path_b} (-{deletions} lines)"
+                priority = "P1"
+                mutability = "FLEXIBLE"
+                certainty = "HIGH"
+            else:
+                net = additions - deletions
+                change_size = additions + deletions
+                content = (
+                    f"Modified: {path_b} "
+                    f"(+{additions}/-{deletions} lines, net {net:+d})"
+                )
+                # Büyük değişiklikler P0, küçükler P2
+                if change_size >= 50:
+                    priority = "P0"
+                    mutability = "LOCKED"
+                    certainty = "MEDIUM"
+                elif change_size >= 10:
+                    priority = "P1"
+                    mutability = "FLEXIBLE"
+                    certainty = "MEDIUM"
+                else:
+                    priority = "P2"
+                    mutability = "FLEXIBLE"
+                    certainty = "LOW"
+
+            decision_id = f"{id_prefix}{start_index + i}"
+            decision = self.add_decision(
+                id=decision_id,
+                priority=priority,
+                certainty=certainty,
+                mutability=mutability,
+                content=content,
+                rationale="Auto-extracted from git diff",
+                source_model=source_model,
+            )
+            added.append(decision)
+
+        return added
+
     def calculate_vocabulary_hash(self) -> str:
         """
         Sözlük hash'i hesapla (symbol_legend'ten)
         """
         vocab_json = json.dumps(self.symbol_legend, sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(vocab_json.encode('utf-8')).hexdigest()
-    
+
     def build(self, created_by: Optional[str] = None, source_model: Optional[str] = None) -> ACTPPacket:
         """
         Paketi oluştur
