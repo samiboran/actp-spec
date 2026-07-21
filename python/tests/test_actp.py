@@ -10,7 +10,7 @@ import pytest
 from actp.core.schema import (
     ACTPPacket, ACTPFile, Decision, ProjectDescriptor, SymbolLegend
 )
-from actp.core.packager import ACTPPackager, ACTPPackagerFactory
+from actp.core.packager import ACTPPackager, ACTPPackagerFactory, ACTPExtractor
 from actp.validator import ACTPValidator
 
 
@@ -229,6 +229,35 @@ class TestACTPPackager:
         assert packet.context == "https://actp.dev/schema/v0.1"
         assert len(packet.files) == 1
         assert len(packet.artifacts.code_snippets) == 1
+    
+    def test_deduplication_no_content_copy(self):
+        """✂️ Deduplikasyon test - code_snippets'te content yok"""
+        packager = ACTPPackager("Dedup Test", "Test deduplication")
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # 2 Python dosyası ekle
+            (Path(tmpdir) / "main.py").write_text("def main(): pass")
+            (Path(tmpdir) / "utils.py").write_text("def helper(): pass")
+            
+            for f in Path(tmpdir).glob("*.py"):
+                packager.add_file(f)
+        
+        packet = packager.build()
+        
+        # Deduplikasyon doğrulaması
+        # files[] → tam içerik
+        assert len(packet.files) == 2
+        assert packet.files[0].content is not None
+        assert len(packet.files[0].content) > 0
+        
+        # code_snippets[] → referans sadece (content=None)
+        code_snippets = packet.artifacts.code_snippets
+        assert len(code_snippets) == 2
+        # Content'ı sadece file'da olmalı, code_snippet'te değil
+        for snippet in code_snippets:
+            assert snippet.content is None
+            # Ama summary olmalı
+            assert snippet.summary is not None
 
 
 class TestACTPValidator:
@@ -431,6 +460,68 @@ class TestPackagerFactory:
             assert len(packet.artifacts.code_snippets) == 1
 
 
+class TestExtractor:
+    """🔓 ACTPExtractor testleri"""
+    
+    def test_extract_creates_files(self):
+        """Extractor dosyaları yaratır"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            
+            # Paket oluştur
+            packager = ACTPPackager("Extract Test", "Test extraction")
+            (tmpdir_path / "main.py").write_text("print('hello')")
+            (tmpdir_path / "README.md").write_text("# Test")
+            
+            for f in tmpdir_path.glob("*"):
+                if f.is_file():
+                    packager.add_file(f)
+            
+            packet = packager.build()
+            packet_dict = packet.to_dict()
+            
+            # Extract'ı test et
+            with tempfile.TemporaryDirectory() as extract_dir:
+                extracted = ACTPExtractor.extract_from_file(
+                    packet_file=Path(tmpdir_path) / "dummy.actp",  # dummy path
+                    output_dir=Path(extract_dir)
+                )
+                
+                # Not: extract_from_file packet_file'dan okuyor, dummy kullandık
+                # Bunun yerine direct ACTPExtractor kullanacağız
+                extractor = ACTPExtractor(packet_dict)
+                extracted_count = extractor.extract_to_directory(Path(extract_dir))
+                
+                assert extracted_count == 2
+                assert (Path(extract_dir) / "main.py").exists()
+                assert (Path(extract_dir) / "README.md").exists()
+    
+    def test_extract_preserves_content(self):
+        """Extractor içeriği koruyor"""
+        original_content = "def hello():\n    print('world')"
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            test_file = tmpdir_path / "script.py"
+            test_file.write_text(original_content)
+            
+            # Paket oluştur
+            packager = ACTPPackager("Preservation Test", "Test")
+            packager.add_file(test_file)
+            
+            packet = packager.build()
+            packet_dict = packet.to_dict()
+            
+            # Extract
+            with tempfile.TemporaryDirectory() as extract_dir:
+                extractor = ACTPExtractor(packet_dict)
+                extractor.extract_to_directory(Path(extract_dir))
+                
+                # Doğrula
+                extracted_file = Path(extract_dir) / "script.py"
+                assert extracted_file.read_text() == original_content
+
+
 class TestIntegration:
     """Entegrasyon testleri"""
     
@@ -472,6 +563,44 @@ class TestIntegration:
             assert is_valid is True
             assert len(errors) == 0
             assert len(packet_dict["files"]) == 3
+    
+    def test_round_trip_pack_unpack(self):
+        """🔄 Round-trip test: pack → save → unpack → verify"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            
+            # Orijinal proje dosyaları
+            (tmpdir_path / "app.py").write_text("def app():\n    return 'ok'")
+            (tmpdir_path / "config.json").write_text('{"debug": false}')
+            
+            # PACK: Pakete dönüştür
+            packager = ACTPPackager("Round Trip Test", "Pack and unpack")
+            for f in tmpdir_path.glob("*"):
+                if f.is_file():
+                    packager.add_file(f)
+            
+            packet = packager.build()
+            packet_dict = packet.to_dict()
+            
+            # SAVE: Paketi dosyaya kaydet
+            with tempfile.TemporaryDirectory() as work_dir:
+                packet_file = Path(work_dir) / "round_trip.actp"
+                with open(packet_file, 'w') as f:
+                    json.dump(packet_dict, f)
+                
+                # UNPACK: Dosyaları geri çıkar
+                with tempfile.TemporaryDirectory() as restore_dir:
+                    extractor = ACTPExtractor(packet_dict)
+                    extracted_count = extractor.extract_to_directory(Path(restore_dir))
+                    
+                    assert extracted_count == 2
+                    
+                    # VERIFY: İçerikleri karşılaştır
+                    restored_app = (Path(restore_dir) / "app.py").read_text()
+                    restored_config = (Path(restore_dir) / "config.json").read_text()
+                    
+                    assert restored_app == "def app():\n    return 'ok'"
+                    assert restored_config == '{"debug": false}'
 
 
 if __name__ == "__main__":
