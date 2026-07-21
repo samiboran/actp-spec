@@ -124,11 +124,11 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["id", "lang", "content"],
+            "required": ["id", "lang"],
             "properties": {
               "id": { "type": "string" },
               "lang": { "type": "string" },
-              "content": { "type": "string" },
+              "content": { "type": ["string", "null"], "description": "Snippet content. Null when content is deduplicated into files[]." },
               "summary": { "type": "string" }
             }
           }

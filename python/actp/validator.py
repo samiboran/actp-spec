@@ -239,10 +239,15 @@ class ACTPValidator:
                     self.errors.append(f"CodeSnippet #{i} bir dictionary olmalı")
                     continue
                 
-                required = ['id', 'lang', 'content']
+                required = ['id', 'lang']
                 for field in required:
                     if field not in snippet:
                         self.errors.append(f"CodeSnippet #{i} - {field} eksik")
+                
+                # content is optional (may be null when deduplicated into files[])
+                if 'content' in snippet and snippet['content'] is not None:
+                    if not isinstance(snippet['content'], str):
+                        self.errors.append(f"CodeSnippet #{i} - content string veya null olmalı")
         
         # References
         references = artifacts.get('references', [])

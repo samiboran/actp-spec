@@ -68,7 +68,7 @@ class CodeSnippet:
     """Kod parçacığı"""
     id: str
     lang: str  # python, typescript, etc
-    content: str
+    content: Optional[str] = None  # None when deduplicated — full content lives in files[]
     summary: Optional[str] = None
 
 

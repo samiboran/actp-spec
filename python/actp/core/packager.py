@@ -115,7 +115,7 @@ class ACTPPackager:
         size = len(file_bytes)
         
         actp_file = ACTPFile(
-            path=str(file_path),
+            path=file_path.name,  # Store only the basename; pack_directory overrides with relative path
             content=content,
             size=size,
             type=file_type,
@@ -366,23 +366,34 @@ class ACTPExtractor:
         
         extracted_count = 0
         
+        output_dir_resolved = output_dir.resolve()
+
         for file_data in self.files:
             if isinstance(file_data, dict):
                 path = file_data.get('path')
                 content = file_data.get('content')
                 
                 if path and content is not None:
-                    # Absolute paths are stored as-is by add_file(); make them
-                    # relative so they land inside output_dir, not at the
-                    # original location on disk.
-                    rel = Path(path)
-                    if rel.is_absolute():
-                        rel = Path(rel.name)
-                    file_path = output_dir / rel
-                    file_path.parent.mkdir(parents=True, exist_ok=True)
-                    
+                    path_obj = Path(path)
+
+                    # Security: reject absolute paths entirely.
+                    if path_obj.is_absolute():
+                        print(f"⚠️  Güvenlik: mutlak yol reddedildi: {path}")
+                        continue
+
+                    # Security: resolve and verify the target stays inside
+                    # output_dir to prevent path-traversal attacks (e.g. ../../).
+                    resolved = (output_dir / path_obj).resolve()
                     try:
-                        with open(file_path, 'w', encoding='utf-8') as f:
+                        resolved.relative_to(output_dir_resolved)
+                    except ValueError:
+                        print(f"⚠️  Güvenlik: path traversal girişimi reddedildi: {path}")
+                        continue
+
+                    resolved.parent.mkdir(parents=True, exist_ok=True)
+
+                    try:
+                        with open(resolved, 'w', encoding='utf-8') as f:
                             f.write(content)
                         extracted_count += 1
                     except Exception as e:
