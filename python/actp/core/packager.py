@@ -1,43 +1,60 @@
+"""
+ACTP Packager - Projeleri JSON-LD uyumlu ACTP paketlerine dönüştür
+"""
 import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any
+
 from .schema import (
-    ACTPPackage, ACTPFile, ACTPMetadata, 
-    Decision, SymbolLegend, VocabularyEntry, OpenQuestion, Blocker
+    ACTPPacket, ACTPFile, ACTPMetadata, ProjectDescriptor,
+    Decision, SymbolLegend, Task, Artifacts, CodeSnippet,
+    PriorityMatrixItem, DeadLetterItem
 )
 
+
 class ACTPPackager:
+    """
+    ACTP Packager - Projeyi pakete dönüştür
+    - Dosyaları filtrele (binary, .git, node_modules, vb)
+    - Kararları ve semantic katmanı yakala
+    - JSON-LD uyumlu paket oluştur
+    """
+    
     IGNORE_PATTERNS = [
         '.git', '__pycache__', '.venv', 'node_modules',
         '.env', '.DS_Store', '*.pyc', '.pytest_cache',
-        'dist', 'build', '*.egg-info'
+        'dist', 'build', '*.egg-info', '.next', '.nuxt'
     ]
     
     BINARY_EXTENSIONS = [
         '.bin', '.exe', '.dll', '.so', '.dylib',
-        '.jpg', '.png', '.gif', '.zip', '.tar', '.gz'
+        '.jpg', '.png', '.gif', '.zip', '.tar', '.gz',
+        '.wasm', '.pyc', '.o', '.a', '.lib'
     ]
     
-    def __init__(self, project_name: str, version: str = "1.0.0"):
+    def __init__(self, project_name: str = "", project_goal: str = ""):
         self.project_name = project_name
-        self.version = version
+        self.project_goal = project_goal
         self.files: List[ACTPFile] = []
         self.decisions: List[Decision] = []
-        self.symbol_legend: List[SymbolLegend] = []
-        self.vocabulary: List[VocabularyEntry] = []
-        self.open_questions: List[OpenQuestion] = []
-        self.blockers: List[Blocker] = []
-        self.context: Dict[str, Any] = {}
+        self.symbol_legend: Dict[str, str] = {}
+        self.tasks: List[Task] = []
+        self.open_questions: List[str] = []
+        self.next_steps: List[str] = []
+        self.entity_map: Dict[str, str] = {}
+        self.priority_matrix: List[PriorityMatrixItem] = []
     
     def _should_ignore(self, path: str) -> bool:
+        """Dosya/dizin görmezden gelinmeli mi?"""
         for pattern in self.IGNORE_PATTERNS:
-            if pattern in path:
+            if pattern.replace('*', '') in path:
                 return True
         return False
     
     def _is_binary(self, file_path: Path) -> bool:
+        """Dosya binary mi?"""
         ext = file_path.suffix.lower()
         if ext in self.BINARY_EXTENSIONS:
             return True
@@ -50,21 +67,29 @@ class ACTPPackager:
             return True
     
     def _calculate_checksum(self, content: bytes) -> str:
+        """SHA-256 hash hesapla"""
         return hashlib.sha256(content).hexdigest()
     
-    def add_file_from_path(self, file_path: Path) -> None:
+    def add_file(self, file_path: Path) -> Optional[ACTPFile]:
+        """Dosyayı pakete ekle"""
         if self._should_ignore(str(file_path)):
-            return
+            return None
         
         if self._is_binary(file_path):
+            # Binary dosya - placeholder
             file_type = 'binary'
-            content = f"[Binary file - {file_path.name}]"
+            content = f"[Binary file: {file_path.name}]"
             file_bytes = b''
         else:
-            file_type = 'code' if file_path.suffix in ['.py', '.js', '.ts', '.go', '.rs'] else 'text'
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read()
-            file_bytes = content.encode('utf-8')
+            # Text/code dosya
+            file_type = 'code' if file_path.suffix in ['.py', '.js', '.ts', '.go', '.rs', '.java'] else 'text'
+            try:
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read()
+                file_bytes = content.encode('utf-8')
+            except Exception as e:
+                content = f"[Error reading file: {e}]"
+                file_bytes = b''
         
         checksum = self._calculate_checksum(file_bytes)
         size = len(file_bytes)
@@ -78,100 +103,192 @@ class ACTPPackager:
         )
         
         self.files.append(actp_file)
+        return actp_file
     
-    def add_decision(self, id: str, title: str, description: str, context: str,
-                    alternatives: List[str], rationale: str, date_made: Optional[str] = None,
-                    impact: Optional[str] = None) -> None:
+    def add_decision(
+        self,
+        id: str,
+        priority: str,  # P0, P1, P2
+        certainty: str,  # HIGH, MEDIUM, LOW
+        mutability: str,  # LOCKED, FLEXIBLE
+        content: str,
+        symbol: Optional[str] = None,
+        rationale: Optional[str] = None,
+        source_model: Optional[str] = None,
+        hallucination_risk: bool = False,
+        external_dependency: bool = False
+    ) -> Decision:
+        """Karar ekle"""
         decision = Decision(
             id=id,
-            title=title,
-            description=description,
-            context=context,
-            alternatives_considered=alternatives,
+            priority=priority,
+            certainty=certainty,
+            mutability=mutability,
+            content=content,
+            symbol=symbol,
             rationale=rationale,
-            date_made=date_made or datetime.now().isoformat(),
-            impact=impact
+            source_model=source_model,
+            hallucination_risk=hallucination_risk,
+            external_dependency=external_dependency
         )
         self.decisions.append(decision)
+        return decision
     
-    def add_symbol(self, symbol: str, meaning: str, usage_context: str,
-                  related_symbols: Optional[List[str]] = None) -> None:
-        legend = SymbolLegend(
-            symbol=symbol,
-            meaning=meaning,
-            usage_context=usage_context,
-            related_symbols=related_symbols or []
-        )
-        self.symbol_legend.append(legend)
+    def add_symbol(self, symbol: str, meaning: str, priority: Optional[str] = None,
+                   mutability: Optional[str] = None, certainty: Optional[str] = None) -> None:
+        """Sembol ekle"""
+        # Format: "priority=P0, mutability=LOCKED, certainty=HIGH"
+        parts = []
+        if priority:
+            parts.append(f"priority={priority}")
+        if mutability:
+            parts.append(f"mutability={mutability}")
+        if certainty:
+            parts.append(f"certainty={certainty}")
+        
+        symbol_value = ", ".join(parts) if parts else meaning
+        self.symbol_legend[symbol] = symbol_value
     
-    def add_vocabulary(self, term: str, definition: str, context: str,
-                      aliases: Optional[List[str]] = None) -> None:
-        vocab = VocabularyEntry(
-            term=term,
-            definition=definition,
-            context=context,
-            aliases=aliases or []
-        )
-        self.vocabulary.append(vocab)
+    def add_task(self, id: str, status: str, description: str, symbol: Optional[str] = None) -> Task:
+        """Görev ekle"""
+        task = Task(id=id, status=status, description=description, symbol=symbol)
+        self.tasks.append(task)
+        return task
     
-    def add_open_question(self, id: str, question: str, context: str,
-                         priority: str = "medium", related_decisions: Optional[List[str]] = None) -> None:
-        q = OpenQuestion(
-            id=id,
-            question=question,
-            context=context,
-            priority=priority,
-            related_decisions=related_decisions or []
-        )
-        self.open_questions.append(q)
+    def add_open_question(self, question: str) -> None:
+        """Açık soru ekle"""
+        self.open_questions.append(question)
     
-    def add_blocker(self, id: str, title: str, description: str,
-                   severity: str = "medium", related_decisions: Optional[List[str]] = None) -> None:
-        blocker = Blocker(
-            id=id,
-            title=title,
-            description=description,
-            severity=severity,
-            related_decisions=related_decisions or []
-        )
-        self.blockers.append(blocker)
+    def add_next_step(self, step: str) -> None:
+        """Sonraki adım ekle"""
+        self.next_steps.append(step)
     
-    def set_context(self, context: Dict[str, Any]) -> None:
-        self.context = context
+    def set_entity_map(self, entity_map: Dict[str, str]) -> None:
+        """Kanonik ad haritası belirle"""
+        self.entity_map = entity_map
+    
+    def add_priority_matrix_item(self, segment: str, weight: float) -> None:
+        """Öncelik matrisi elemanı ekle"""
+        if 0.0 <= weight <= 1.0:
+            self.priority_matrix.append(PriorityMatrixItem(segment=segment, weight=weight))
     
     def calculate_vocabulary_hash(self) -> str:
-        vocab_json = json.dumps(
-            [v.__dict__ for v in self.vocabulary],
-            sort_keys=True
-        )
-        return hashlib.sha256(vocab_json.encode()).hexdigest()
+        """
+        Sözlük hash'i hesapla (symbol_legend'ten)
+        """
+        vocab_json = json.dumps(self.symbol_legend, sort_keys=True, ensure_ascii=False)
+        return hashlib.sha256(vocab_json.encode('utf-8')).hexdigest()
     
-    def build(self) -> ACTPPackage:
+    def build(self, created_by: Optional[str] = None, source_model: Optional[str] = None) -> ACTPPacket:
+        """Paketi oluştur"""
+        now = datetime.now().isoformat()
+        
+        # Proje tanımlayıcısı
+        project = ProjectDescriptor(
+            name=self.project_name,
+            goal=self.project_goal,
+            constraints=[],
+            soft_preferences=[]
+        )
+        
+        # Vocabulary hash hesapla
+        vocab_hash = self.calculate_vocabulary_hash()
+        
+        # Metadata
         metadata = ACTPMetadata(
-            created_at=datetime.now().isoformat(),
-            updated_at=datetime.now().isoformat(),
+            created_at=now,
+            created_by=created_by,
+            model_context=source_model,
             tags=['actp', 'semantic', 'context']
         )
         
-        vocab_hash = self.calculate_vocabulary_hash()
-        
-        package = ACTPPackage(
-            version=self.version,
-            project_name=self.project_name,
-            files=self.files,
-            metadata=metadata,
+        # Paket oluştur
+        packet = ACTPPacket(
+            context="https://actp.dev/schema/v0.1",
+            type="ACTPPacket",
+            actp_version="0.1",
+            created_at=now,
+            project=project,
             decisions=self.decisions,
+            vocabulary_hash=vocab_hash,
             symbol_legend=self.symbol_legend,
-            vocabulary=self.vocabulary,
+            source_model=source_model,
+            tasks=self.tasks,
             open_questions=self.open_questions,
-            blockers=self.blockers,
-            context=self.context,
-            vocabulary_hash=vocab_hash
+            next_steps=self.next_steps,
+            entity_map=self.entity_map,
+            priority_matrix=self.priority_matrix
         )
         
-        return package
+        return packet
     
-    def save_to_file(self, output_path: Path) -> None:
-        package = self.build()
+    def save_to_file(self, output_path: Path, created_by: Optional[str] = None,
+                     source_model: Optional[str] = None) -> None:
+        """Paketi JSON dosyasına kaydet"""
+        packet = self.build(created_by=created_by, source_model=source_model)
+        
         with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(package.to_dict(), f, indent=2, ensure_ascii=False)
+            json.dump(packet.to_dict(), f, indent=2, ensure_ascii=False)
+    
+    def load_from_file(self, file_path: Path) -> Dict[str, Any]:
+        """JSON dosyasından paket yükle"""
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+
+
+class ACTPPackagerFactory:
+    """
+    Fabrika - Dizinden paketi otomatik oluştur
+    """
+    
+    @staticmethod
+    def pack_directory(
+        directory: Path,
+        project_name: str,
+        project_goal: str,
+        created_by: Optional[str] = None,
+        source_model: Optional[str] = None,
+        max_depth: int = 10
+    ) -> ACTPPacket:
+        """
+        Dizini pakete dönüştür
+        """
+        packager = ACTPPackager(project_name=project_name, project_goal=project_goal)
+        
+        # Dosyaları gez
+        for file_path in directory.rglob('*'):
+            if file_path.is_file():
+                # Depth kontrolü
+                relative_path = file_path.relative_to(directory)
+                depth = len(relative_path.parts)
+                
+                if depth <= max_depth:
+                    packager.add_file(file_path)
+        
+        return packager.build(created_by=created_by, source_model=source_model)
+    
+    @staticmethod
+    def pack_directory_to_file(
+        directory: Path,
+        output_file: Path,
+        project_name: str,
+        project_goal: str,
+        created_by: Optional[str] = None,
+        source_model: Optional[str] = None,
+        max_depth: int = 10
+    ) -> None:
+        """
+        Dizini dosyaya pakele
+        """
+        packager = ACTPPackager(project_name=project_name, project_goal=project_goal)
+        
+        # Dosyaları gez
+        for file_path in directory.rglob('*'):
+            if file_path.is_file():
+                relative_path = file_path.relative_to(directory)
+                depth = len(relative_path.parts)
+                
+                if depth <= max_depth:
+                    packager.add_file(file_path)
+        
+        packager.save_to_file(output_file, created_by=created_by, source_model=source_model)
