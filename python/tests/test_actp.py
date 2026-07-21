@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from actp.core.schema import (
-    ACTPPacket, Decision, ProjectDescriptor, SymbolLegend
+    ACTPPacket, ACTPFile, Decision, ProjectDescriptor, SymbolLegend
 )
 from actp.core.packager import ACTPPackager, ACTPPackagerFactory
 from actp.validator import ACTPValidator
@@ -105,7 +105,16 @@ class TestACTPPacket:
             created_at="2026-07-21T10:00:00Z",
             project=ProjectDescriptor(name="Test", goal="Test goal"),
             decisions=[decision],
-            symbol_legend={"🔴": "priority=P0, mutability=LOCKED, certainty=HIGH"}
+            symbol_legend={"🔴": "priority=P0, mutability=LOCKED, certainty=HIGH"},
+            files=[
+                ACTPFile(
+                    path="main.py",
+                    content="print('hello')",
+                    size=len("print('hello')".encode("utf-8")),
+                    type="code",
+                    checksum=hashlib.sha256("print('hello')".encode("utf-8")).hexdigest()
+                )
+            ]
         )
         
         data = packet.to_dict()
@@ -114,6 +123,7 @@ class TestACTPPacket:
         assert data["@type"] == "ACTPPacket"
         assert len(data["decisions"]) == 1
         assert data["decisions"][0]["id"] == "D1"
+        assert data["files"][0]["path"] == "main.py"
 
 
 class TestACTPPackager:
@@ -197,6 +207,11 @@ class TestACTPPackager:
         """Paket oluşturma"""
         packager = ACTPPackager("Test Project", "Test goal")
         
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_file = Path(tmpdir) / "main.py"
+            test_file.write_text("print('hello')")
+            packager.add_file(test_file)
+        
         packager.add_decision(
             id="D1",
             priority="P0",
@@ -212,6 +227,8 @@ class TestACTPPackager:
         assert packet.project.goal == "Test goal"
         assert len(packet.decisions) == 1
         assert packet.context == "https://actp.dev/schema/v0.1"
+        assert len(packet.files) == 1
+        assert len(packet.artifacts.code_snippets) == 1
 
 
 class TestACTPValidator:
@@ -224,6 +241,7 @@ class TestACTPValidator:
     
     def test_validate_valid_packet(self):
         """Geçerli paketi doğrula"""
+        file_content = "print('hello')"
         data = {
             "@context": "https://actp.dev/schema/v0.1",
             "@type": "ACTPPacket",
@@ -238,6 +256,15 @@ class TestACTPValidator:
                 "soft_preferences": []
             },
             "decisions": [],
+            "files": [
+                {
+                    "path": "main.py",
+                    "content": file_content,
+                    "size": len(file_content.encode("utf-8")),
+                    "type": "code",
+                    "checksum": hashlib.sha256(file_content.encode("utf-8")).hexdigest()
+                }
+            ],
             "tasks": [],
             "artifacts": {},
             "entity_map": {},
@@ -252,6 +279,34 @@ class TestACTPValidator:
         
         assert is_valid is True
         assert len(errors) == 0
+    
+    def test_validate_file_checksum_mismatch(self):
+        """Dosya checksum uyuşmazlığı"""
+        data = {
+            "@context": "https://actp.dev/schema/v0.1",
+            "@type": "ACTPPacket",
+            "actp_version": "0.1",
+            "created_at": "2026-07-21T10:00:00Z",
+            "vocabulary_hash": hashlib.sha256(json.dumps({}, sort_keys=True, ensure_ascii=False).encode()).hexdigest(),
+            "symbol_legend": {},
+            "project": {"name": "Test", "goal": "Test"},
+            "decisions": [],
+            "files": [
+                {
+                    "path": "main.py",
+                    "content": "print('hello')",
+                    "size": len("print('hello')".encode("utf-8")),
+                    "type": "code",
+                    "checksum": "0" * 64
+                }
+            ]
+        }
+        
+        validator = ACTPValidator()
+        is_valid, errors, warnings = validator.validate_data(data)
+        
+        assert is_valid is False
+        assert any("checksum uyuşmuyor" in e for e in errors)
     
     def test_validate_missing_required_field(self):
         """Zorunlu alan eksik"""
@@ -371,6 +426,9 @@ class TestPackagerFactory:
             # İçeriği kontrol et
             paths = [f.path for f in packet.files]
             assert not any(".git" in p for p in paths)
+            assert "main.py" in paths
+            assert "README.md" in paths
+            assert len(packet.artifacts.code_snippets) == 1
 
 
 class TestIntegration:
@@ -413,6 +471,7 @@ class TestIntegration:
             
             assert is_valid is True
             assert len(errors) == 0
+            assert len(packet_dict["files"]) == 3
 
 
 if __name__ == "__main__":

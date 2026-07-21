@@ -59,6 +59,9 @@ class ACTPValidator:
         # Tasks
         self._validate_tasks(data.get('tasks', []))
         
+        # Files
+        self._validate_files(data.get('files', []))
+        
         # Artifacts
         self._validate_artifacts(data.get('artifacts', {}))
         
@@ -180,6 +183,44 @@ class ACTPValidator:
             
             if 'status' in task and task['status'] not in ['done', 'pending', 'blocked']:
                 self.errors.append(f"Task #{i} - status geçersiz: {task['status']}")
+    
+    def _validate_files(self, files: list) -> None:
+        """Dosyaları kontrol et"""
+        if not isinstance(files, list):
+            self.errors.append("files bir liste olmalı")
+            return
+        
+        for i, file_data in enumerate(files):
+            if not isinstance(file_data, dict):
+                self.errors.append(f"File #{i} bir dictionary olmalı")
+                continue
+            
+            required = ['path', 'content', 'size', 'type', 'checksum']
+            for field in required:
+                if field not in file_data:
+                    self.errors.append(f"File #{i} - {field} eksik")
+            
+            if not isinstance(file_data.get('path'), str) or not file_data.get('path'):
+                self.errors.append(f"File #{i} - path geçersiz")
+            
+            content = file_data.get('content')
+            if not isinstance(content, str):
+                self.errors.append(f"File #{i} - content string olmalı")
+                continue
+            
+            size = file_data.get('size')
+            if not isinstance(size, int) or size < 0:
+                self.errors.append(f"File #{i} - size geçersiz")
+            elif len(content.encode('utf-8')) != size:
+                self.errors.append(f"File #{i} - size içeriğe uymuyor")
+            
+            checksum = file_data.get('checksum')
+            if not isinstance(checksum, str) or len(checksum) != 64:
+                self.errors.append(f"File #{i} - checksum geçersiz")
+            else:
+                calculated_checksum = hashlib.sha256(content.encode('utf-8')).hexdigest()
+                if calculated_checksum != checksum:
+                    self.errors.append(f"File #{i} - checksum uyuşmuyor")
     
     def _validate_artifacts(self, artifacts: dict) -> None:
         """Artifacts'ı kontrol et"""

@@ -149,6 +149,7 @@ class ACTPPacket:
     # Optional
     source_model: Optional[str] = None  # claude, chatgpt, gemini, other
     tasks: List[Task] = field(default_factory=list)
+    files: List[ACTPFile] = field(default_factory=list)
     artifacts: Artifacts = field(default_factory=Artifacts)
     entity_map: Dict[str, str] = field(default_factory=dict)  # Kanonik adlar
     priority_matrix: List[PriorityMatrixItem] = field(default_factory=list)
@@ -196,6 +197,16 @@ class ACTPPacket:
                     "symbol": t.symbol,
                 }
                 for t in self.tasks
+            ],
+            "files": [
+                {
+                    "path": f.path,
+                    "content": f.content,
+                    "size": f.size,
+                    "type": f.type,
+                    "checksum": f.checksum,
+                }
+                for f in self.files
             ],
             "artifacts": {
                 "code_snippets": [

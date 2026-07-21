@@ -34,6 +34,22 @@ class ACTPPackager:
         '.wasm', '.pyc', '.o', '.a', '.lib'
     ]
     
+    LANGUAGE_MAP = {
+        '.py': 'python',
+        '.js': 'javascript',
+        '.ts': 'typescript',
+        '.tsx': 'typescript',
+        '.jsx': 'javascript',
+        '.go': 'go',
+        '.rs': 'rust',
+        '.java': 'java',
+        '.md': 'markdown',
+        '.json': 'json',
+        '.yml': 'yaml',
+        '.yaml': 'yaml',
+        '.sh': 'shell',
+    }
+    
     def __init__(self, project_name: str = "", project_goal: str = ""):
         self.project_name = project_name
         self.project_goal = project_goal
@@ -69,6 +85,11 @@ class ACTPPackager:
     def _calculate_checksum(self, content: bytes) -> str:
         """SHA-256 hash hesapla"""
         return hashlib.sha256(content).hexdigest()
+    
+    def _infer_language(self, path: str) -> str:
+        """Dosya uzantısından dil türünü çıkar"""
+        suffix = Path(path).suffix.lower()
+        return self.LANGUAGE_MAP.get(suffix, suffix.lstrip('.') or 'text')
     
     def add_file(self, file_path: Path) -> Optional[ACTPFile]:
         """Dosyayı pakete ekle"""
@@ -202,6 +223,19 @@ class ACTPPackager:
             tags=['actp', 'semantic', 'context']
         )
         
+        code_snippets = [
+            CodeSnippet(
+                id=f"file-{index}",
+                lang=self._infer_language(file.path),
+                content=file.content,
+                summary=file.path
+            )
+            for index, file in enumerate(self.files, start=1)
+            if file.type == 'code'
+        ]
+        
+        artifacts = Artifacts(code_snippets=code_snippets)
+        
         # Paket oluştur
         packet = ACTPPacket(
             context="https://actp.dev/schema/v0.1",
@@ -214,6 +248,8 @@ class ACTPPackager:
             symbol_legend=self.symbol_legend,
             source_model=source_model,
             tasks=self.tasks,
+            files=self.files,
+            artifacts=artifacts,
             open_questions=self.open_questions,
             next_steps=self.next_steps,
             entity_map=self.entity_map,
@@ -263,7 +299,9 @@ class ACTPPackagerFactory:
                 depth = len(relative_path.parts)
                 
                 if depth <= max_depth:
-                    packager.add_file(file_path)
+                    actp_file = packager.add_file(file_path)
+                    if actp_file:
+                        actp_file.path = str(relative_path)
         
         return packager.build(created_by=created_by, source_model=source_model)
     
@@ -289,6 +327,8 @@ class ACTPPackagerFactory:
                 depth = len(relative_path.parts)
                 
                 if depth <= max_depth:
-                    packager.add_file(file_path)
+                    actp_file = packager.add_file(file_path)
+                    if actp_file:
+                        actp_file.path = str(relative_path)
         
         packager.save_to_file(output_file, created_by=created_by, source_model=source_model)
